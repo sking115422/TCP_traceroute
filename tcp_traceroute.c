@@ -15,14 +15,19 @@
 int checkStringIsNumeric (char *str)
 {
     int count = 0;
-    printf("Strlen: %ld", strlen(str));
-    for (int i=0;i< strlen(str); i++)
+    printf("strlen: %ld\n", strlen(str));
+    int i;
+    for (i = 0;i< strlen(str); i++)
+    {
+        printf("char: %c\n", str [i]);
         if (isdigit(str[i]) > 0)
         {
             count++;
+            printf("count: %d\n", count);
         }
+    }
 
-    printf("count: %d", count);
+
     if (count == strlen(str))
         return 1;
     else 
@@ -37,8 +42,13 @@ int openConnection(char *TARGET, int portnum)
     struct in_addr **addr_list;
     struct in_addr addr;
 
-    char * first_str = strtok(TARGET, ".");
+    char target_copy [strlen(TARGET)];
 
+    strcpy(target_copy, TARGET);
+
+    char * first_str = strtok(target_copy, ".");
+
+    printf("target: %s\n", TARGET);
 
     char *first_ip;
     if (checkStringIsNumeric (first_str) == 0)
@@ -51,7 +61,7 @@ int openConnection(char *TARGET, int portnum)
 
         printf("\nDNS INFO\n");
         printf("Official name is: %s\n", he->h_name);
-        char *first_ip = inet_ntoa(*(struct in_addr*)he->h_addr);
+        first_ip = inet_ntoa(*(struct in_addr*)he->h_addr);
         printf("IP address: %s\n", first_ip);
         printf("All addresses: ");
         addr_list = (struct in_addr **)he->h_addr_list;
@@ -66,7 +76,7 @@ int openConnection(char *TARGET, int portnum)
         first_ip = TARGET;
     }
 
-
+    printf("first_ip_1: %s\n", first_ip);
 
 
     int tcp_socket;
@@ -78,13 +88,14 @@ int openConnection(char *TARGET, int portnum)
 
     remote_address.sin_family = AF_INET;
     remote_address.sin_port = htons(portnum);
+    printf("first_ip_2: %s\n", first_ip);
     inet_aton(first_ip, &remote_address.sin_addr);
 
     //establishing TCP connection
     if ( connect(tcp_socket, (struct sockaddr *) &remote_address, sizeof(remote_address)) != 0 )
     {
         close(tcp_socket);
-        perror("Error: ");
+        perror("Error");
         exit(0);
     }
 
@@ -126,7 +137,7 @@ int main(int argc, char **argv)
     }
 
 
-    openConnection(TARGET, (int)*DST_PORT);
+    int conn = openConnection(TARGET, (int)*DST_PORT);
 
 }
 
