@@ -142,6 +142,32 @@ int main(int argc, char **argv)
     char * target_ip = resolveToIP(TARGET, portnum);
     int max_hops = atoi(MAX_HOPS);
 
+    int sendsock = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
+
+    int one = 1;
+    const int *val = &one;
+    if (setsockopt (sendsock, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
+    {
+        perror("Error setting IP_HDRINCL");
+        exit(0);
+    }
+
+    int recvsock_icmp = socket(PF_INET, SOCK_RAW, IPPROTO_ICMP);
+    int recvsock_raw = socket(PF_INET, SOCK_RAW, IPPROTO_TCP);
+    
+    struct timeval tv;
+    tv.tv_sec = 1;  /* 5 Secs Timeout */
+
+    if (setsockopt(recvsock_icmp, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
+    {
+        perror("Error setting socket timeout");
+        exit(0);
+    }
+    if (setsockopt(recvsock_raw, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
+    {
+        perror("Error setting socket timeout");
+        exit(0);
+    }
 
     for (int i = 1; i < max_hops + 1; i++)
     {
@@ -180,17 +206,6 @@ int main(int argc, char **argv)
         tcph->th_urp = 0;
         iph->ip_sum = csum ((unsigned short *) dg, iph->ip_len >> 1);
 
-        int sendsock = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
-
-        int one = 1;
-        const int *val = &one;
-
-        if (setsockopt (sendsock, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
-        {
-            perror("Error setting IP_HDRINCL");
-            exit(0);
-        }
-
 
         if (sendto (sendsock, dg, iph->ip_len ,	0, (struct sockaddr *) &sain, sizeof (sain)) < 0)
         {
@@ -206,14 +221,11 @@ int main(int argc, char **argv)
         int saddr_size = sizeof(saddr);
 
 
-
-        int recvsock = socket(PF_INET, SOCK_RAW, IPPROTO_ICMP);
-
         unsigned char * buf = (unsigned char *) malloc(65536);
         
-        int bytes_recieved = recvfrom(recvsock, buf, 65536, 0, &saddr, &saddr_size);
+        int bytes_recieved = recvfrom(recvsock_icmp, buf, 65536, 0, &saddr, &saddr_size);
 
-        printf("bytes_recieved: %d", bytes_recieved);
+        printf("bytes_recieved: %d\n", bytes_recieved);
 
 
     }
