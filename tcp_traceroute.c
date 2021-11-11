@@ -76,6 +76,15 @@ char * resolveToIP(char *TARGET, int portnum)
     return target_ip;
 }
 
+struct pseudo_header
+{
+	u_int32_t source_address;
+	u_int32_t dest_address;
+	u_int8_t placeholder;
+	u_int8_t protocol;
+	u_int16_t tcp_length;
+};
+
 unsigned short csum(unsigned short *ptr,int nbytes) 
 {
 	register long sum;
@@ -156,65 +165,98 @@ int main(int argc, char **argv)
     int recvsock_raw = socket(PF_INET, SOCK_RAW, IPPROTO_TCP);
     
     struct timeval tv;
-    tv.tv_sec = 1;  /* 5 Secs Timeout */
+    tv.tv_sec       = 3;
+    tv.tv_usec      = 300000;
 
     if (setsockopt(recvsock_icmp, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
     {
         perror("Error setting socket timeout");
         exit(0);
     }
+
     if (setsockopt(recvsock_raw, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
     {
         perror("Error setting socket timeout");
         exit(0);
     }
 
-    for (int i = 1; i < max_hops + 1; i++)
+    char dg [4096];
+    
+    char * data;
+    char source_ip[32];
+    char * tempgram;
+
+    struct iphdr *iph = (struct iphdr *) dg;
+    struct tcphdr *tcph = (struct tcphdr *) (dg + sizeof (struct ip));
+    struct pseudo_header sudohdr;
+    struct sockaddr_in sain;
+
+    for (int i = 0; i < max_hops; i++)
     {
+        memset (dg, 0, 4096);
 
-        char dg [4096];
+        data = dg + sizeof(struct iphdr) + sizeof(struct tcphdr);
+        strcpy(data , "test");
 
-        struct ip *iph = (struct ip *) dg;
-        struct tcphdr *tcph = (struct tcphdr *) dg + sizeof (struct ip);
-
-        struct sockaddr_in sain;
-
+        strcpy(source_ip , "192.168.1.23");
         sain.sin_family = AF_INET;
         sain.sin_port = htons(portnum);
         sain.sin_addr.s_addr = inet_addr (target_ip);
 
-        iph->ip_hl = 5;
-        iph->ip_v = 4;
-        iph->ip_tos = 0;
-        iph->ip_len = sizeof (struct ip) + sizeof (struct tcphdr);	/* no payload */
-        iph->ip_id = htonl (54321);	/* the value doesn't matter here */
-        iph->ip_off = 0;
-        iph->ip_ttl = i;
-        iph->ip_p = 6;
-        iph->ip_sum = 0;		/* set it to 0 before computing the actual checksum later */
-        iph->ip_src.s_addr = inet_addr ("127.0.0.1");/* SYN's can be blindly spoofed */
-        iph->ip_dst.s_addr = sain.sin_addr.s_addr;
-        tcph->th_sport = htons (12345);	/* arbitrary port */
-        tcph->th_dport = htons (portnum);
-        tcph->th_seq = random ();/* in a SYN packet, the sequence is a random */
-        tcph->th_ack = 0;/* number, and the ack sequence is 0 in the 1st packet */
-        tcph->th_x2 = 0;
-        tcph->th_off = 0;		/* first and only tcp segment */
-        tcph->th_flags = TH_SYN;	/* initial connection request */
-        tcph->th_win = htonl (65535);	/* maximum allowed window size */
-        tcph->th_sum = 0;   /* if you set a checksum to zero, your kernel's IP stack should fill in the correct checksum during transmission */
-        tcph->th_urp = 0;
-        iph->ip_sum = csum ((unsigned short *) dg, iph->ip_len >> 1);
+        iph->ihl = 5;
+        iph->version = 4;
+        iph->tos = 0;
+        iph->tot_len = sizeof (struct ip) + sizeof (struct tcphdr);	/* no payload */
+        iph->id = htonl (54321);	/* the value doesn't matter here */
+        iph->frag_off = 0;
+        iph->ttl = i;
+        iph->protocol = 6;
+        iph->check = 0;		/* set it to 0 before computing the actual checksum later */
+        iph->saddr = inet_addr (source_ip);/* SYN's can be blindly spoofed */
+        iph->daddr = sain.sin_addr.s_addr;
+        iph->check = csum ((unsigned short *) dg, iph->tot_len >> 1);
+
+        //TCP Header
+        tcph->source = htons (12345);
+        tcph->dest = htons (portnum);
+        tcph->seq = 0;
+        tcph->ack_seq = 0;
+        tcph->doff = 5;	//tcp header size
+        tcph->fin=0;
+        tcph->syn=1;
+        tcph->rst=0;
+        tcph->psh=0;
+        tcph->ack=0;
+        tcph->urg=0;
+        tcph->window = htons (5840);	/* maximum allowed window size */
+        tcph->check = 0;	//leave checksum 0 now, filled later by pseudo header
+        tcph->urg_ptr = 0;
+
+        //Now the TCP checksum
+        sudohdr.source_address = inet_addr( source_ip );
+        sudohdr.dest_address = sain.sin_addr.s_addr;
+        sudohdr.placeholder = 0;
+        sudohdr.protocol = IPPROTO_TCP;
+        sudohdr.tcp_length = htons(sizeof(struct tcphdr) + strlen(data) );
+
+        int psize = sizeof(struct pseudo_header) + sizeof(struct tcphdr) + strlen(data);
+        tempgram = malloc(psize);
+
+        memcpy(tempgram , (char*) &sudohdr , sizeof (struct pseudo_header));
+        memcpy(tempgram + sizeof(struct pseudo_header) , tcph , sizeof(struct tcphdr) + strlen(data));
+
+        tcph->check = csum( (unsigned short*) tempgram , psize);
 
 
-        if (sendto (sendsock, dg, iph->ip_len ,	0, (struct sockaddr *) &sain, sizeof (sain)) < 0)
+
+        if (sendto (sendsock, dg, iph->tot_len, 0, (struct sockaddr *) &sain, sizeof (sain)) < 0)
         {
             perror("sendto failed");
         }
 
         else
         {
-            printf ("Packet Sent. Length : %d \n" , iph->ip_len);
+            printf ("Packet Sent. Length : %d \n" , iph->tot_len);
         }
 
         struct sockaddr saddr;
@@ -235,7 +277,7 @@ int main(int argc, char **argv)
 
     printf("done...\n");
 
-
+    return 0;
 
 }
 
@@ -264,7 +306,7 @@ int main(int argc, char **argv)
 	// }
 
 	// //Datagram to represent the packet
-	// char datagram[4096] , source_ip[32] , *data , *pseudogram;
+	// char datagram[4096] , source_ip[32] , *data , *tempgram;
 	
 	// //zero out the packet buffer
 	// memset (datagram, 0, 4096);
