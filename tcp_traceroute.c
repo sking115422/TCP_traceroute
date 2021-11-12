@@ -236,9 +236,6 @@ tcph->window = htons (5840); /* maximum allowed window size */
 tcph->check = 0; //leave checksum 0 now, filled later by pseudo header
 tcph->urg_ptr = 0;
 
-//TCP checksum
-tcph->check = 0;
-
 
 // //Now the TCP checksum
 // psh.source_address = inet_addr( source_ip );
