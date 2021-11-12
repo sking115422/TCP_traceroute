@@ -74,7 +74,7 @@ target_ip = TARGET;
 return target_ip;
 }
 
-struct temp_header
+struct pseudo_header
 {
 u_int32_t source_address;
 u_int32_t dest_address;
@@ -181,7 +181,7 @@ char datagram[4096];
 char source_ip[32];
 
 // char *data; 
-char *tempgram;
+char *pseudogram;
 
 //zero out the packet buffer
 memset (datagram, 0, 4096);
@@ -192,7 +192,7 @@ struct iphdr *iph = (struct iphdr *) datagram;
 //TCP header
 struct tcphdr *tcph = (struct tcphdr *) (datagram + sizeof (struct ip));
 struct sockaddr_in sin;
-struct temp_header tmp_hdr;
+struct pseudo_header psh;
 
 // //Data part
 // data = datagram + sizeof(struct iphdr) + sizeof(struct tcphdr);
@@ -229,7 +229,7 @@ tcph->doff = 5; //tcp header size
 tcph->fin=0;
 tcph->syn=1;
 tcph->rst=0;
-tcph->tmp_hdr=0;
+tcph->psh=0;
 tcph->ack=0;
 tcph->urg=0;
 tcph->window = htons (5840); /* maximum allowed window size */
@@ -241,16 +241,16 @@ tcph->check = 0;
 
 
 // //Now the TCP checksum
-// tmp_hdr.source_address = inet_addr( source_ip );
-// tmp_hdr.dest_address = sin.sin_addr.s_addr;
-// tmp_hdr.placeholder = 0;
-// tmp_hdr.protocol = IPPROTO_TCP;
-// tmp_hdr.tcp_length = htons(sizeof(struct tcphdr));
-// int psize = sizeof(struct temp_header) + sizeof(struct tcphdr);
-// tempgram = malloc(psize);
-// memcpy(tempgram , (char*) &tmp_hdr , sizeof (struct temp_header));
-// memcpy(tempgram + sizeof(struct temp_header) , tcph , sizeof(struct tcphdr));
-// tcph->check = csum( (unsigned short*) tempgram , psize);
+// psh.source_address = inet_addr( source_ip );
+// psh.dest_address = sin.sin_addr.s_addr;
+// psh.placeholder = 0;
+// psh.protocol = IPPROTO_TCP;
+// psh.tcp_length = htons(sizeof(struct tcphdr));
+// int psize = sizeof(struct pseudo_header) + sizeof(struct tcphdr);
+// pseudogram = malloc(psize);
+// memcpy(pseudogram , (char*) &psh , sizeof (struct pseudo_header));
+// memcpy(pseudogram + sizeof(struct pseudo_header) , tcph , sizeof(struct tcphdr));
+// tcph->check = csum( (unsigned short*) pseudogram , psize);
 
 
 if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
