@@ -179,24 +179,31 @@ for (int i = 0; i < max_hops; i++)
 //Datagram to represent the packet
 char datagram[4096];
 char source_ip[32];
+
 // char *data; 
 char *tempgram;
+
 //zero out the packet buffer
 memset (datagram, 0, 4096);
+
 //IP header
 struct iphdr *iph = (struct iphdr *) datagram;
+
 //TCP header
 struct tcphdr *tcph = (struct tcphdr *) (datagram + sizeof (struct ip));
 struct sockaddr_in sin;
-struct temp_header psh;
+struct temp_header tmp_hdr;
+
 // //Data part
 // data = datagram + sizeof(struct iphdr) + sizeof(struct tcphdr);
 // strcpy(data , "test");
+
 //some address resolution
 strcpy(source_ip , "192.168.1.23");
 sin.sin_family = AF_INET;
 sin.sin_port = htons(portnum);
 sin.sin_addr.s_addr = inet_addr (target_ip);
+
 //Fill in the IP Header
 iph->ihl = 5;
 iph->version = 4;
@@ -209,8 +216,10 @@ iph->protocol = IPPROTO_TCP;
 iph->check = 0; //Set to 0 before calculating checksum
 iph->saddr = inet_addr ( source_ip ); //Spoof the source ip address
 iph->daddr = sin.sin_addr.s_addr;
+
 //Ip checksum
 iph->check = csum ((unsigned short *) datagram, iph->tot_len);
+
 //TCP Header
 tcph->source = htons (12345);
 tcph->dest = htons (portnum);
@@ -220,23 +229,28 @@ tcph->doff = 5; //tcp header size
 tcph->fin=0;
 tcph->syn=1;
 tcph->rst=0;
-tcph->psh=0;
+tcph->tmp_hdr=0;
 tcph->ack=0;
 tcph->urg=0;
 tcph->window = htons (5840); /* maximum allowed window size */
 tcph->check = 0; //leave checksum 0 now, filled later by pseudo header
 tcph->urg_ptr = 0;
-//Now the TCP checksum
-psh.source_address = inet_addr( source_ip );
-psh.dest_address = sin.sin_addr.s_addr;
-psh.placeholder = 0;
-psh.protocol = IPPROTO_TCP;
-psh.tcp_length = htons(sizeof(struct tcphdr));
-int psize = sizeof(struct temp_header) + sizeof(struct tcphdr);
-tempgram = malloc(psize);
-memcpy(tempgram , (char*) &psh , sizeof (struct temp_header));
-memcpy(tempgram + sizeof(struct temp_header) , tcph , sizeof(struct tcphdr));
-tcph->check = csum( (unsigned short*) tempgram , psize);
+
+//TCP checksum
+tcph->check = 0;
+
+
+// //Now the TCP checksum
+// tmp_hdr.source_address = inet_addr( source_ip );
+// tmp_hdr.dest_address = sin.sin_addr.s_addr;
+// tmp_hdr.placeholder = 0;
+// tmp_hdr.protocol = IPPROTO_TCP;
+// tmp_hdr.tcp_length = htons(sizeof(struct tcphdr));
+// int psize = sizeof(struct temp_header) + sizeof(struct tcphdr);
+// tempgram = malloc(psize);
+// memcpy(tempgram , (char*) &tmp_hdr , sizeof (struct temp_header));
+// memcpy(tempgram + sizeof(struct temp_header) , tcph , sizeof(struct tcphdr));
+// tcph->check = csum( (unsigned short*) tempgram , psize);
 
 
 if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
@@ -266,158 +280,5 @@ return 0;
 
 }
 
-////TEST 1
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// //Create a raw socket
-// int s = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
-// if(s == -1)
-// {
-// //socket creation failed, may be because of non-root privileges
-// perror("Failed to create socket");
-// exit(1);
-// }
-
-// //IP_HDRINCL to tell the kernel that headers are included in the packet
-// int one = 1;
-// const int *val = &one;
-
-// if (setsockopt (s, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0)
-// {
-// perror("Error setting IP_HDRINCL");
-// exit(0);
-// }
-
-// //Datagram to represent the packet
-// char datagram[4096] , source_ip[32] , *data , *tempgram;
-// //zero out the packet buffer
-// memset (datagram, 0, 4096);
-// //IP header
-// struct iphdr *iph = (struct iphdr *) datagram;
-// //TCP header
-// struct tcphdr *tcph = (struct tcphdr *) (datagram + sizeof (struct ip));
-// struct sockaddr_in sin;
-// //Data part
-// data = datagram + sizeof(struct iphdr) + sizeof(struct tcphdr);
-// strcpy(data , "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
-// //some address resolution
-// strcpy(source_ip , "127.0.0.1");
-// sin.sin_family = AF_INET;
-// sin.sin_port = htons(80);
-// sin.sin_addr.s_addr = inet_addr ("108.177.122.102");
-// //Fill in the IP Header
-// iph->ihl = 5;
-// iph->version = 4;
-// iph->tos = 0;
-// iph->tot_len = sizeof (struct iphdr) + sizeof (struct tcphdr) + strlen(data);
-// iph->id = htonl (54321); //Id of this packet
-// iph->frag_off = 0;
-// iph->ttl = 255;
-// iph->protocol = IPPROTO_TCP;
-// iph->check = 0; //Set to 0 before calculating checksum
-// iph->saddr = inet_addr ( source_ip ); //Spoof the source ip address
-// iph->daddr = sin.sin_addr.s_addr;
-
-// printf("datagram: %s\n", datagram);
-// printf("data: %s\n", data);
-
-// //Send the packet
-// if (sendto (s, datagram, iph->tot_len , 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
-// {
-// perror("sendto failed");
-// }
-// //Data send successfully
-// else
-// {
-// printf ("Packet Send. Length : %d \n" , iph->tot_len);
-// }
-// // sleep for 1 seconds
-// sleep(1);
-
-// int bytes_recieved;
-
-// unsigned char *buffer = (unsigned char *) malloc(65536); //to receive data
-// memset(buffer,0,65536);
-// struct sockaddr saddr;
-// int saddr_len = sizeof (saddr);
-
-// bytes_recieved = recvfrom(s,buffer,65536,0,&saddr,(socklen_t *)&saddr_len);
-
-// // printf("&saddr: %s\n", &saddr);
-// printf("&saddr_len: %d\n", saddr_len);
-
-// printf ("response: %s\n", buffer);
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-//////MAIN 
-// int conn = openRawConnection(TARGET, atoi(DST_PORT));
-
-/////HELPER METHOD
-
-// int openRawConnection(char *TARGET, int portnum)
-// {
-// struct hostent *he;
-// struct in_addr **addr_list;
-// struct in_addr addr;
-
-// char target_copy [strlen(TARGET)];
-
-// strcpy(target_copy, TARGET);
-
-// char * first_str = strtok(target_copy, ".");
-
-// printf("target: %s\n", TARGET);
-
-// char *first_ip;
-// if (checkStringIsNumeric (first_str) == 0)
-// {
-// he = gethostbyname(TARGET);
-// if (he == NULL) { 
-// herror("gethostbyname"); 
-// exit(0);
-// }
-
-// printf("\nDNS INFO\n");
-// printf("Official name is: %s\n", he->h_name);
-// char *temp = inet_ntoa(*(struct in_addr*)he->h_addr);
-// strcpy(first_ip, temp);
-// printf("IP address: %s\n", first_ip);
-// printf("All addresses: ");
-// addr_list = (struct in_addr **)he->h_addr_list;
-// for(int i = 0; addr_list[i] != NULL; i++) {
-// printf("%s ", inet_ntoa(*addr_list[i]));
-// }
-// printf("\n");
-
-// }
-// else 
-// {
-// first_ip = TARGET;
-// }
-
-// int raw_tcp_socket;
-
-// //creating socket
-// raw_tcp_socket = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-
-// struct sockaddr_in remote_address;
-
-// remote_address.sin_family = AF_INET;
-// remote_address.sin_port = htons(portnum);
-// inet_aton(first_ip, &remote_address.sin_addr);
-
-// //establishing TCP connection
-// if ( connect(raw_tcp_socket, (struct sockaddr *) &remote_address, sizeof(remote_address)) != 0 )
-// {
-// close(raw_tcp_socket);
-// perror("Error");
-// exit(0);
-// }
-
-// printf("\nNew raw TCP socket created!\n");
-
-// return raw_tcp_socket;
-// }
 
