@@ -165,8 +165,8 @@ int main(int argc, char **argv)
     int recvsock_raw = socket(PF_INET, SOCK_RAW, IPPROTO_TCP);
     
     struct timeval tv;
-    tv.tv_sec       = 3;
-    tv.tv_usec      = 300000;
+    tv.tv_sec       = 1;
+    tv.tv_usec      = 100000;
 
     if (setsockopt(recvsock_icmp, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
     {
