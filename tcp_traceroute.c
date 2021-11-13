@@ -5,16 +5,17 @@
 #include <string.h>
 #include <ctype.h>
 #include <signal.h>
+#include <time.h>
+#include <errno.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
-
 #include <netinet/in.h>
-#include <netinet/tcp.h> //Provides declarations for tcp header
-#include <netinet/ip.h> //Provides declarations for ip header
+#include <netinet/tcp.h> 
+#include <netinet/ip.h> 
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <errno.h> //For errno - the error number
+
 
 
 int checkStringIsNumeric (char *str)
@@ -25,7 +26,7 @@ int checkStringIsNumeric (char *str)
     {
         if (isdigit(str[i]) > 0)
         {
-        count++;    
+            count++;    
         }
     }
 
@@ -49,8 +50,6 @@ char * resolveToIP(char *TARGET, int portnum)
 
     char * first_str = strtok(target_copy, ".");
 
-    printf("\nTarget: %s\n", TARGET);
-
     char *target_ip;
     if (checkStringIsNumeric (first_str) == 0)
     {
@@ -62,12 +61,8 @@ char * resolveToIP(char *TARGET, int portnum)
             exit(0);
         }
 
-        printf("\nDNS INFO\n");
-        printf("Official name is: %s\n", he->h_name);
         char *temp = inet_ntoa(*(struct in_addr*)he->h_addr);
         strcpy(target_ip, temp);
-        printf("IP address: %s\n", target_ip);
-        printf("\n");
     }
     else 
     {
@@ -81,7 +76,6 @@ char * resolveToIP(char *TARGET, int portnum)
 char * get_Local_Broadcast_IP ()
 {
 
-    printf ("Obtaining local private IP...\n");
     system("hostname -I > localip.txt");
 
     FILE * fp;
@@ -94,8 +88,6 @@ char * get_Local_Broadcast_IP ()
         exit(EXIT_FAILURE);
 
     read = getline(&line, &len, fp);
-    printf("Retrieved the following:\n");
-    printf("%s", line);
     fclose(fp);
 
     system("rm localip.txt");
@@ -109,8 +101,6 @@ char * get_Local_Broadcast_IP ()
             ip = strtok(NULL, " ");
         }
     }
-
-    printf("Local Private IP: %s\n\n", ip);
 
     return ip;
 }
@@ -159,8 +149,6 @@ unsigned short csum(unsigned short *ptr,int nbytes)
 int main(int argc, char **argv) 
 {
     
-    printf("\nTCP TRACEROUTE PROGRAM\n");
-
     int option_val = 0;
 
     char * MAX_HOPS = "30";
@@ -198,6 +186,9 @@ int main(int argc, char **argv)
 
     char * local_ip = get_Local_Broadcast_IP();
 
+    printf("\nTCP_Traceroute to %s (%s), %s hops max, TCP SYN to port %s\n", TARGET, target_ip, MAX_HOPS, DST_PORT);
+    printf("\n");
+
     int sendsock = socket (AF_INET, SOCK_RAW, IPPROTO_TCP);
 
     int one = 1;
@@ -228,12 +219,11 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    for (int i = 0; i < max_hops; i++)
+    for (int i = 1; i < max_hops + 1; i++)
     {
 
         //Datagram to represent the packet
         char datagram[4096];
-        char source_ip[32];
 
         // char *data; 
         char *pseudogram;
@@ -288,7 +278,7 @@ int main(int argc, char **argv)
 
 
         //Now the TCP checksum
-        psh.source_address = inet_addr( source_ip );
+        psh.source_address = inet_addr( local_ip );
         psh.dest_address = sin.sin_addr.s_addr;
         psh.placeholder = 0;
         psh.protocol = IPPROTO_TCP;
@@ -299,17 +289,18 @@ int main(int argc, char **argv)
         memcpy(pseudogram + sizeof(struct pseudo_header) , tcph , sizeof(struct tcphdr));
         tcph->check = csum( (unsigned short*) pseudogram , psize);
 
+        printf("%d   ", i);
+
         for (int j = 0; j < 3; j++)
-        {
+        {   
+            clock_t begin = clock();
+
             if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
             {
                 perror("sendto failed");
             }
 
-            else
-            {
-                printf ("Packet Sent. TTL : %d | Length : %d \n" , iph->ttl, iph->tot_len);
-            }
+            clock_t end = 0;
 
             struct sockaddr saddr;
             int saddr_size = sizeof(saddr);
@@ -319,12 +310,21 @@ int main(int argc, char **argv)
             int bytes_recieved;
             if (bytes_recieved = recvfrom(recvsock_icmp, buf, 65536, 0, &saddr, &saddr_size) < 0)
             {
-                printf("Timeout Error: no packet recieved...\n");
+                printf("*   ");
             }
             else
             {
-                printf("bytes_recieved: %d\n", bytes_recieved);
+                end = clock();
             }
+
+            double time_spent;
+
+            if (end != 0)
+            {
+                time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+                printf ("%f ms   ", time_spent * 1000);
+            }
+
         }
 
         printf("\n");
