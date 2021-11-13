@@ -17,6 +17,23 @@
 #include <errno.h> //For errno - the error number
 
 
+char * getLocal_IP ()
+{
+    char localhost [256];
+    char * local_ip;
+    struct hostent * host_entry;
+    int hostname;
+
+    hostname = gethostname(localhost, sizeof(localhost));
+    host_entry = gethostbyname(localhost);
+    local_ip = inet_ntoa (*((struct in_addr*) host_entry->h_addr_list[0]));
+
+    printf("Current Hostname: %s\n", localhost);
+    printf("Host IP: %s\n", local_ip);
+
+    return local_ip;
+}
+
 int checkStringIsNumeric (char *str)
 {
     int count = 0;
@@ -159,7 +176,9 @@ int main(int argc, char **argv)
     char * target_ip = resolveToIP(TARGET, portnum);
     int max_hops = atoi(MAX_HOPS);
 
-    int sendsock = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
+    getLocal_IP();
+
+    int sendsock = socket (AF_INET, SOCK_RAW, IPPROTO_TCP);
 
     int one = 1;
     const int *val = &one;
@@ -170,11 +189,12 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    int recvsock_icmp = socket(PF_INET, SOCK_RAW, IPPROTO_ICMP);
-    int recvsock_raw = socket(PF_INET, SOCK_RAW, IPPROTO_TCP);
+    int recvsock_icmp = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    int recvsock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    
     struct timeval tv;
-    tv.tv_sec = 1;
-    tv.tv_usec = 100000;
+    tv.tv_sec = 5;
+    tv.tv_usec = 500000;
 
     if (setsockopt(recvsock_icmp, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
     {
@@ -212,9 +232,12 @@ int main(int argc, char **argv)
         // //Data part
         // data = datagram + sizeof(struct iphdr) + sizeof(struct tcphdr);
         // strcpy(data , "test");
+        
+        //172.17.152.208
+
 
         //some address resolution
-        strcpy(source_ip , "192.168.1.23");
+        strcpy(source_ip , "172.17.152.208");
         sin.sin_family = AF_INET;
         sin.sin_port = htons(portnum);
         sin.sin_addr.s_addr = inet_addr (target_ip);
@@ -264,7 +287,6 @@ int main(int argc, char **argv)
         memcpy(pseudogram + sizeof(struct pseudo_header) , tcph , sizeof(struct tcphdr));
         tcph->check = csum( (unsigned short*) pseudogram , psize);
 
-
         if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
         {
             perror("sendto failed");
@@ -279,12 +301,20 @@ int main(int argc, char **argv)
         int saddr_size = sizeof(saddr);
 
         unsigned char * buf = (unsigned char *) malloc(65536);
-        int bytes_recieved = recvfrom(recvsock_icmp, buf, 65536, 0, &saddr, &saddr_size);
+
+        int bytes_recieved;
+        if (bytes_recieved = recvfrom(recvsock_icmp, buf, 65536, 0, &saddr, &saddr_size) < 0)
+        {
+            perror("recv");
+        }
 
         printf("bytes_recieved: %d\n", bytes_recieved);
 
     }
 
+    close (sendsock);
+    close (recvsock_icmp);
+    close (recvsock_raw);
 
     printf("done...\n");
 
