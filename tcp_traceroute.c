@@ -393,12 +393,12 @@ int main(int argc, char **argv)
             if (end != 0)
             {
                 time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
-                printf ("%f ms   ", time_spent * 1000);
+                printf ("%.3f ms   ", time_spent * 1000);
             }
 
         }
 
-        printf("\n");
+        printf("\n\n");
 
     }
 
