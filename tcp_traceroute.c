@@ -22,6 +22,7 @@
 
 
 
+
 int checkStringIsNumeric (char *str)
 {
     int count = 0;
@@ -40,6 +41,7 @@ int checkStringIsNumeric (char *str)
         return 0;
 
 }
+
 
 char * resolveToIP(char *TARGET, int portnum)
 {
@@ -75,6 +77,7 @@ char * resolveToIP(char *TARGET, int portnum)
 
     return target_ip;
 }
+
 
 int resolveToHostname (char * ip)
 {   
@@ -140,6 +143,7 @@ struct pseudo_header
     u_int8_t protocol;
     u_int16_t tcp_length;
 };
+
 
 unsigned short csum(unsigned short *ptr,int nbytes) 
 {
@@ -230,8 +234,8 @@ int main(int argc, char **argv)
     int recvsock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     
     struct timeval tv;
-    tv.tv_sec = 3;
-    tv.tv_usec = 300000;
+    tv.tv_sec = 5;
+    tv.tv_usec = 500000;
 
     if (setsockopt(recvsock_icmp, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
     {
@@ -250,6 +254,7 @@ int main(int argc, char **argv)
 
         //Datagram to represent the packet
         char datagram[4096];
+        char source_ip[32];
 
         // char *data; 
         char *pseudogram;
@@ -266,9 +271,12 @@ int main(int argc, char **argv)
         struct pseudo_header psh;
 
         //Some address resolution
+        strcpy(source_ip , local_ip);
         sin.sin_family = AF_INET;
         sin.sin_port = htons(portnum);
         sin.sin_addr.s_addr = inet_addr (target_ip);
+
+        // printf ("\n\nsource_ip: %s\n\n", source_ip);
 
         //Fill in the IP Header
         iph->ihl = 5;
@@ -280,7 +288,7 @@ int main(int argc, char **argv)
         iph->ttl = i;
         iph->protocol = IPPROTO_TCP;
         iph->check = 0; //Set to 0 before calculating checksum
-        iph->saddr = inet_addr ( local_ip ); //Spoof the source ip address
+        iph->saddr = inet_addr (source_ip); //Spoof the source ip address
         iph->daddr = sin.sin_addr.s_addr;
 
         //Ip checksum
@@ -304,7 +312,7 @@ int main(int argc, char **argv)
 
 
         //Now the TCP checksum
-        psh.source_address = inet_addr( local_ip );
+        psh.source_address = inet_addr(source_ip);
         psh.dest_address = sin.sin_addr.s_addr;
         psh.placeholder = 0;
         psh.protocol = IPPROTO_TCP;
@@ -337,6 +345,7 @@ int main(int argc, char **argv)
 
             unsigned char * buffer = (unsigned char *) malloc(65536);
             memset(buffer, 0 ,65536);
+
             struct sockaddr saddr;
             int saddr_size = sizeof(saddr);
 
