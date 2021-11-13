@@ -17,23 +17,6 @@
 #include <errno.h> //For errno - the error number
 
 
-char * getLocal_IP ()
-{
-    char localhost [256];
-    char * local_ip;
-    struct hostent * host_entry;
-    int hostname;
-
-    hostname = gethostname(localhost, sizeof(localhost));
-    host_entry = gethostbyname(localhost);
-    local_ip = inet_ntoa (*((struct in_addr*) host_entry->h_addr_list[0]));
-
-    printf("Current Hostname: %s\n", localhost);
-    printf("Host IP: %s\n", local_ip);
-
-    return local_ip;
-}
-
 int checkStringIsNumeric (char *str)
 {
     int count = 0;
@@ -66,7 +49,7 @@ char * resolveToIP(char *TARGET, int portnum)
 
     char * first_str = strtok(target_copy, ".");
 
-    printf("target: %s\n", TARGET);
+    printf("\nTarget: %s\n", TARGET);
 
     char *target_ip;
     if (checkStringIsNumeric (first_str) == 0)
@@ -93,6 +76,45 @@ char * resolveToIP(char *TARGET, int portnum)
 
     return target_ip;
 }
+
+
+char * get_Local_Broadcast_IP ()
+{
+
+    printf ("Obtaining local private IP...\n");
+    system("hostname -I > localip.txt");
+
+    FILE * fp;
+    char * line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    fp = fopen("localip.txt", "r");
+    if (fp == NULL)
+        exit(EXIT_FAILURE);
+
+    read = getline(&line, &len, fp);
+    printf("Retrieved the following:\n");
+    printf("%s", line);
+    fclose(fp);
+
+    system("rm localip.txt");
+
+    char * ip = strtok(line, " ");
+
+    if (strstr(ip, "172") == NULL)
+    {
+        while( ip != NULL && strstr(ip, "172") == NULL) 
+        {
+            ip = strtok(NULL, " ");
+        }
+    }
+
+    printf("Local Private IP: %s\n\n", ip);
+
+    return ip;
+}
+
 
 struct pseudo_header
 {
@@ -133,13 +155,11 @@ unsigned short csum(unsigned short *ptr,int nbytes)
 
 }
 
-void timeoutFunc (int signum)
-{
-    printf("Timeout occured! No ICMP packet received...\n");
-}
 
 int main(int argc, char **argv) 
 {
+    
+    printf("\nTCP TRACEROUTE PROGRAM\n");
 
     int option_val = 0;
 
@@ -176,7 +196,7 @@ int main(int argc, char **argv)
     char * target_ip = resolveToIP(TARGET, portnum);
     int max_hops = atoi(MAX_HOPS);
 
-    getLocal_IP();
+    char * local_ip = get_Local_Broadcast_IP();
 
     int sendsock = socket (AF_INET, SOCK_RAW, IPPROTO_TCP);
 
@@ -193,8 +213,8 @@ int main(int argc, char **argv)
     int recvsock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     
     struct timeval tv;
-    tv.tv_sec = 5;
-    tv.tv_usec = 500000;
+    tv.tv_sec = 3;
+    tv.tv_usec = 300000;
 
     if (setsockopt(recvsock_icmp, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
     {
@@ -229,15 +249,7 @@ int main(int argc, char **argv)
         struct sockaddr_in sin;
         struct pseudo_header psh;
 
-        // //Data part
-        // data = datagram + sizeof(struct iphdr) + sizeof(struct tcphdr);
-        // strcpy(data , "test");
-        
-        //172.17.152.208
-
-
-        //some address resolution
-        strcpy(source_ip , "172.17.152.208");
+        //Some address resolution
         sin.sin_family = AF_INET;
         sin.sin_port = htons(portnum);
         sin.sin_addr.s_addr = inet_addr (target_ip);
@@ -252,7 +264,7 @@ int main(int argc, char **argv)
         iph->ttl = i;
         iph->protocol = IPPROTO_TCP;
         iph->check = 0; //Set to 0 before calculating checksum
-        iph->saddr = inet_addr ( source_ip ); //Spoof the source ip address
+        iph->saddr = inet_addr ( local_ip ); //Spoof the source ip address
         iph->daddr = sin.sin_addr.s_addr;
 
         //Ip checksum
@@ -287,28 +299,35 @@ int main(int argc, char **argv)
         memcpy(pseudogram + sizeof(struct pseudo_header) , tcph , sizeof(struct tcphdr));
         tcph->check = csum( (unsigned short*) pseudogram , psize);
 
-        if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
+        for (int j = 0; j < 3; j++)
         {
-            perror("sendto failed");
+            if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
+            {
+                perror("sendto failed");
+            }
+
+            else
+            {
+                printf ("Packet Sent. TTL : %d | Length : %d \n" , iph->ttl, iph->tot_len);
+            }
+
+            struct sockaddr saddr;
+            int saddr_size = sizeof(saddr);
+
+            unsigned char * buf = (unsigned char *) malloc(65536);
+
+            int bytes_recieved;
+            if (bytes_recieved = recvfrom(recvsock_icmp, buf, 65536, 0, &saddr, &saddr_size) < 0)
+            {
+                printf("Timeout Error: no packet recieved...\n");
+            }
+            else
+            {
+                printf("bytes_recieved: %d\n", bytes_recieved);
+            }
         }
 
-        else
-        {
-            printf ("Packet Sent. Length : %d \n" , iph->tot_len);
-        }
-
-        struct sockaddr saddr;
-        int saddr_size = sizeof(saddr);
-
-        unsigned char * buf = (unsigned char *) malloc(65536);
-
-        int bytes_recieved;
-        if (bytes_recieved = recvfrom(recvsock_icmp, buf, 65536, 0, &saddr, &saddr_size) < 0)
-        {
-            perror("recv");
-        }
-
-        printf("bytes_recieved: %d\n", bytes_recieved);
+        printf("\n");
 
     }
 
