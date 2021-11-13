@@ -76,6 +76,28 @@ char * resolveToIP(char *TARGET, int portnum)
     return target_ip;
 }
 
+int resolveToHostname (char * ip)
+{   
+    struct hostent *h;
+    struct sockaddr_in sin;
+    char domain[512];
+    sin.sin_addr.s_addr=inet_addr(ip);
+
+    h = gethostbyaddr((char *)&sin.sin_addr.s_addr, sizeof(struct in_addr), AF_INET);
+
+    if (h!=(struct hostent *)0)
+    {
+        strcpy(domain,h->h_name);
+        printf("%s ", domain);
+    }
+    else
+    {
+        printf("%s ", ip);
+    }
+    
+    return 0;
+}
+
 
 char * get_Local_Broadcast_IP ()
 {
@@ -192,7 +214,7 @@ int main(int argc, char **argv)
 
     printf("\nTCP_Traceroute to %s (%s), %s hops max, TCP SYN to port %s\n", TARGET, target_ip, MAX_HOPS, DST_PORT);
     printf("\n");
-
+    
     int sendsock = socket (AF_INET, SOCK_RAW, IPPROTO_TCP);
 
     int one = 1;
@@ -295,6 +317,13 @@ int main(int argc, char **argv)
 
         printf("%d   ", i);
 
+        char new_icmp_packet_source [16];
+        char old_icmp_packet_source [16];
+        memset(new_icmp_packet_source, 0 , 16);
+        memset(old_icmp_packet_source, 0 , 16);
+
+
+
         for (int j = 0; j < 3; j++)
         {   
             clock_t begin = clock();
@@ -305,9 +334,6 @@ int main(int argc, char **argv)
             }
 
             clock_t end = 0;
-
-
-            
 
             unsigned char * buffer = (unsigned char *) malloc(65536);
             memset(buffer, 0 ,65536);
@@ -324,10 +350,11 @@ int main(int argc, char **argv)
                 end = clock();
 
                 struct ethhdr *eth = (struct ethhdr *)(buffer);
-                printf("\nEthernet Header\n");
-                printf("\t|-Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
-                printf("\t|-Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
-                printf("\t|-Protocol : %d\n",eth->h_proto);
+
+                // printf("\nEthernet Header\n");
+                // printf("\t|-Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
+                // printf("\t|-Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
+                // printf("\t|-Protocol : %d\n",eth->h_proto);
 
                 struct sockaddr_in source;
                 struct sockaddr_in dest;
@@ -336,30 +363,29 @@ int main(int argc, char **argv)
                 struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
                 memset(&source, 0, sizeof(source));
                 source.sin_addr.s_addr = ip->saddr;
-                memset(&dest, 0, sizeof(dest));
-                dest.sin_addr.s_addr = ip->daddr;
+                // memset(&dest, 0, sizeof(dest));
+                // dest.sin_addr.s_addr = ip->daddr;
 
-                printf("\nIP Header\n");
-                printf("\t|-Version : %d\n",(unsigned int)ip->version);
-                
-                printf("\t|-Internet Header Length : %d DWORDS or %d Bytes\n",(unsigned int)ip->ihl,((unsigned int)(ip->ihl))*4);
-                
-                printf("\t|-Type Of Service : %d\n",(unsigned int)ip->tos);
-                
-                printf("\t|-Total Length : %d Bytes\n",ntohs(ip->tot_len));
-                
-                printf("\t|-Identification : %d\n",ntohs(ip->id));
-                
-                printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
-                
-                printf("\t|-Protocol : %d\n",(unsigned int)ip->protocol);
-                
-                printf("\t|-Header Checksum : %d\n",ntohs(ip->check));
-                
-                printf("\t|-Source IP : %s\n", inet_ntoa(source.sin_addr));
-                
-                printf("\t|-Destination IP : %s\n",inet_ntoa(dest.sin_addr));
+                // printf("\nIP Header\n");
+                // printf("\t|-Version : %d\n",(unsigned int)ip->version);
+                // printf("\t|-Internet Header Length : %d DWORDS or %d Bytes\n",(unsigned int)ip->ihl,((unsigned int)(ip->ihl))*4);
+                // printf("\t|-Type Of Service : %d\n",(unsigned int)ip->tos);
+                // printf("\t|-Total Length : %d Bytes\n",ntohs(ip->tot_len));
+                // printf("\t|-Identification : %d\n",ntohs(ip->id));
+                // printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
+                // printf("\t|-Protocol : %d\n",(unsigned int)ip->protocol);
+                // printf("\t|-Header Checksum : %d\n",ntohs(ip->check));
+                // printf("\t|-Destination IP : %s\n",inet_ntoa(dest.sin_addr));
 
+                strcpy((char *) new_icmp_packet_source, inet_ntoa(source.sin_addr));
+
+                if (strcmp(new_icmp_packet_source, old_icmp_packet_source) != 0)
+                {   
+                    resolveToHostname(new_icmp_packet_source);
+                    printf("(%s)   ", new_icmp_packet_source);
+                }
+                
+                strcpy(old_icmp_packet_source, new_icmp_packet_source);
             }
 
             double time_spent;
