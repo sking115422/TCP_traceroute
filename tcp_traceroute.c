@@ -1,3 +1,5 @@
+
+//General header files
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h> 
@@ -7,20 +9,40 @@
 #include <signal.h>
 #include <time.h>
 #include <errno.h>
+#include <sys/select.h>
 
+//Hedaer files for mutli-threading
+#include <pthread.h>
+
+//Header files for socket programming
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h> 
-#include <netinet/ip.h> 
-#include <arpa/inet.h>
-#include <netdb.h>
+
+//Header files for network packet manipulation
 
 #include <netinet/if_ether.h>
 #include <net/ethernet.h>
 #include <netinet/ether.h>
+#include <netinet/ip.h> 
+#include <netinet/ip_icmp.h>
+#include <netinet/tcp.h> 
+
+//Header files for more general network needs
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 
 
+
+
+struct pseudo_header
+{
+    u_int32_t source_address;
+    u_int32_t dest_address;
+    u_int8_t placeholder;
+    u_int8_t protocol;
+    u_int16_t tcp_length;
+};
 
 
 int checkStringIsNumeric (char *str)
@@ -135,16 +157,6 @@ char * get_Local_Broadcast_IP ()
 }
 
 
-struct pseudo_header
-{
-    u_int32_t source_address;
-    u_int32_t dest_address;
-    u_int8_t placeholder;
-    u_int8_t protocol;
-    u_int16_t tcp_length;
-};
-
-
 unsigned short csum(unsigned short *ptr,int nbytes) 
 {
 
@@ -173,6 +185,46 @@ unsigned short csum(unsigned short *ptr,int nbytes)
 
     return(answer);
 
+}
+
+
+struct recv_args 
+{
+    int socket;
+    unsigned char * buffer;
+    struct sockaddr saddr;
+    int saddr_size;
+};
+
+struct recv_return
+{
+    int bytes_recieved;
+    unsigned char * buffer;
+
+};
+
+
+ void * recvPacketsICMP (void * arg)
+{
+
+    struct recv_args vars = *(struct recv_args *) arg;
+    struct recv_return rtn;
+
+    int socket = vars.socket;
+    unsigned char * buffer = vars.buffer;
+    struct sockaddr saddr = vars.saddr;
+    int saddr_size = vars.saddr_size;
+
+    int bytes_recieved = recvfrom(socket, buffer, 65536, 0, &saddr, &saddr_size);
+
+    rtn.bytes_recieved = bytes_recieved;
+    rtn.buffer = buffer;
+
+    struct recv_return *result_ptr = (struct recv_return*) malloc(sizeof(struct recv_return));
+
+    *result_ptr = rtn;
+
+    return (void*) result_ptr; 
 }
 
 
@@ -356,35 +408,16 @@ int main(int argc, char **argv)
             }
             else
             {   
+
                 end = clock();
-
-                struct ethhdr *eth = (struct ethhdr *)(buffer);
-
-                // printf("\nEthernet Header\n");
-                // printf("\t|-Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
-                // printf("\t|-Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
-                // printf("\t|-Protocol : %d\n",eth->h_proto);
 
                 struct sockaddr_in source;
                 struct sockaddr_in dest;
 
                 unsigned short iphdrlen;
-                struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
+                struct iphdr *ip = (struct iphdr*)(buffer);
                 memset(&source, 0, sizeof(source));
                 source.sin_addr.s_addr = ip->saddr;
-                // memset(&dest, 0, sizeof(dest));
-                // dest.sin_addr.s_addr = ip->daddr;
-
-                // printf("\nIP Header\n");
-                // printf("\t|-Version : %d\n",(unsigned int)ip->version);
-                // printf("\t|-Internet Header Length : %d DWORDS or %d Bytes\n",(unsigned int)ip->ihl,((unsigned int)(ip->ihl))*4);
-                // printf("\t|-Type Of Service : %d\n",(unsigned int)ip->tos);
-                // printf("\t|-Total Length : %d Bytes\n",ntohs(ip->tot_len));
-                // printf("\t|-Identification : %d\n",ntohs(ip->id));
-                // printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
-                // printf("\t|-Protocol : %d\n",(unsigned int)ip->protocol);
-                // printf("\t|-Header Checksum : %d\n",ntohs(ip->check));
-                // printf("\t|-Destination IP : %s\n",inet_ntoa(dest.sin_addr));
 
                 strcpy((char *) new_icmp_packet_source, inet_ntoa(source.sin_addr));
 
@@ -422,4 +455,28 @@ int main(int argc, char **argv)
 }
 
 
+////For layer 2
 
+// struct ethhdr *eth = (struct ethhdr *)(buffer);
+
+// printf("\nEthernet Header\n");
+// printf("\t|-Source Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5]);
+// printf("\t|-Destination Address : %.2X-%.2X-%.2X-%.2X-%.2X-%.2X\n",eth->h_dest[0],eth->h_dest[1],eth->h_dest[2],eth->h_dest[3],eth->h_dest[4],eth->h_dest[5]);
+// printf("\t|-Protocol : %d\n",eth->h_proto);
+
+////For layer 3 
+
+// memset(&dest, 0, sizeof(dest));
+// dest.sin_addr.s_addr = ip->daddr;
+
+// printf("\nIP Header\n");
+// printf("\t|-Version : %d\n",(unsigned int)ip->version);
+// printf("\t|-Internet Header Length : %d DWORDS or %d Bytes\n",(unsigned int)ip->ihl,((unsigned int)(ip->ihl))*4);
+// printf("\t|-Type Of Service : %d\n",(unsigned int)ip->tos);
+// printf("\t|-Total Length : %d Bytes\n",ntohs(ip->tot_len));
+// printf("\t|-Identification : %d\n",ntohs(ip->id));
+// printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
+// printf("\t|-Protocol : %d\n",(unsigned int)ip->protocol);
+// printf("\t|-Header Checksum : %d\n",ntohs(ip->check));
+// printf("\t|-Destination IP : %s\n",inet_ntoa(dest.sin_addr));
+// printf("\t|-Source IP : %s\n",inet_ntoa(source.sin_addr));
