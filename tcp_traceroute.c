@@ -25,7 +25,8 @@
 #include <netinet/ether.h>
 #include <netinet/ip.h> 
 #include <netinet/ip_icmp.h>
-#include <netinet/tcp.h> 
+#include <netinet/tcp.h>
+
 
 //Header files for more general network needs
 #include <netinet/in.h>
@@ -200,11 +201,13 @@ struct recv_return
 {
     int bytes_recieved;
     unsigned char * buffer;
+    clock_t clock_end;
+
 
 };
 
 
- void * recvPacketsICMP (void * arg)
+ void * recvPackets (void * arg)
 {
 
     struct recv_args vars = *(struct recv_args *) arg;
@@ -217,6 +220,7 @@ struct recv_return
 
     int bytes_recieved = recvfrom(socket, buffer, 65536, 0, &saddr, &saddr_size);
 
+    rtn.clock_end = clock();
     rtn.bytes_recieved = bytes_recieved;
     rtn.buffer = buffer;
 
@@ -395,48 +399,148 @@ int main(int argc, char **argv)
 
             clock_t end = 0;
 
-            unsigned char * buffer = (unsigned char *) malloc(65536);
-            memset(buffer, 0 ,65536);
 
-            struct sockaddr saddr;
-            int saddr_size = sizeof(saddr);
 
-            int bytes_recieved = recvfrom(recvsock_icmp, buffer, 65536, 0, &saddr, &saddr_size);
-            if(bytes_recieved < 0)
+            struct sockaddr saddr_icmp;
+            int saddr_size_icmp = sizeof(saddr_icmp);
+
+            struct recv_args input_icmp;
+            struct recv_return *res_icmp;
+
+            unsigned char * buffer_icmp = (unsigned char *) malloc(65536);
+            memset(buffer_icmp, 0 ,65536);
+
+            input_icmp.buffer = buffer_icmp;
+            input_icmp.saddr = saddr_icmp;
+            input_icmp.saddr_size = saddr_size_icmp;
+            input_icmp.socket = recvsock_icmp;
+
+            pthread_t t_icmp;
+
+
+
+            struct sockaddr saddr_raw;
+            int saddr_size_raw = sizeof(saddr_raw);
+
+            struct recv_args input_raw;
+            struct recv_return *res_raw;
+
+            unsigned char * buffer_raw = (unsigned char *) malloc(65536);
+            memset(buffer_raw, 0 ,65536);
+
+            input_raw.buffer = buffer_raw;
+            input_raw.saddr = saddr_raw;
+            input_raw.saddr_size = saddr_size_raw;
+            input_raw.socket = recvsock_raw;
+
+            pthread_t t_raw;
+
+
+
+            if (pthread_create(&t_icmp, NULL, &recvPackets, &input_icmp) != 0)
             {
-                printf("*   ");
+                perror("pthread_icmp");
             }
-            else
-            {   
 
-                end = clock();
+            if (pthread_create(&t_raw, NULL, &recvPackets, &input_raw) != 0)
+            {
+                perror("pthread_raw");
+            }
+
+            if (pthread_join(t_icmp, (void **) &res_icmp) != 0)
+            {
+                perror("pthread_icmp_join");
+            }
+
+            if (pthread_join(t_raw, (void **) &res_raw) != 0)
+            {
+                perror("pthread_icmp_join");
+            }
+
+            if (res_raw->bytes_recieved > 0)
+            {
 
                 struct sockaddr_in source;
                 struct sockaddr_in dest;
 
-                unsigned short iphdrlen;
-                struct iphdr *ip = (struct iphdr*)(buffer);
+                struct iphdr *ip = (struct iphdr*)(res_icmp->buffer);
                 memset(&source, 0, sizeof(source));
                 source.sin_addr.s_addr = ip->saddr;
+                memset(&dest, 0, sizeof(dest));
+                dest.sin_addr.s_addr = ip->daddr;
 
-                strcpy((char *) new_icmp_packet_source, inet_ntoa(source.sin_addr));
+                printf("\nIP Header\n");
+                printf("\t|-Version : %d\n",(unsigned int)ip->version);
+                printf("\t|-Internet Header Length : %d DWORDS or %d Bytes\n",(unsigned int)ip->ihl,((unsigned int)(ip->ihl))*4);
+                printf("\t|-Type Of Service : %d\n",(unsigned int)ip->tos);
+                printf("\t|-Total Length : %d Bytes\n",ntohs(ip->tot_len));
+                printf("\t|-Identification : %d\n",ntohs(ip->id));
+                printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
+                printf("\t|-Protocol : %d\n",(unsigned int)ip->protocol);
+                printf("\t|-Header Checksum : %d\n",ntohs(ip->check));
+                printf("\t|-Destination IP : %s\n",inet_ntoa(dest.sin_addr));
+                printf("\t|-Source IP : %s\n",inet_ntoa(source.sin_addr));
 
-                if (strcmp(new_icmp_packet_source, old_icmp_packet_source) != 0)
-                {   
-                    resolveToHostname(new_icmp_packet_source);
-                    printf("(%s)   ", new_icmp_packet_source);
-                }
+                struct tcphdr *tcp_hdr = (struct tcphdr *)(res_icmp->buffer + sizeof(struct iphdr) + 1);
+
+                // sizeof(struct iphdr)
+
+
+                printf("\nTCP Header\n");
+                printf("\t|-Source Port : %d\n", (unsigned short) tcp_hdr->th_sport);
+                printf("\t|-Destination Port : %d\n", (unsigned short) tcp_hdr->dest);
+                printf("\t|-Seq Number : %d\n", tcp_hdr->th_seq);
+                printf("\t|-Ack Number : %d\n", tcp_hdr->th_ack);
+                printf("\t|-Flags : %d\n", (unsigned char) tcp_hdr->th_flags);
+                printf("\t|-Window : %d\n", (unsigned char) tcp_hdr->th_win);
+                printf("\t|-Checksum : %d\n", (unsigned char) tcp_hdr->th_sum);
+
+
+
+
+            }
+
+            // else if (res_icmp->bytes_recieved < 0)
+            // {
+            //     printf("*   ");
+            // }
+
+            // else
+            // {   
                 
-                strcpy(old_icmp_packet_source, new_icmp_packet_source);
-            }
 
-            double time_spent;
+            //     end = res_icmp->clock_end;
 
-            if (end != 0)
-            {
-                time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
-                printf ("%.3f ms   ", time_spent * 1000);
-            }
+            //     struct sockaddr_in source;
+            //     struct sockaddr_in dest;
+
+            //     unsigned short iphdrlen;
+            //     struct iphdr *ip = (struct iphdr*)(res_icmp->buffer);
+            //     memset(&source, 0, sizeof(source));
+            //     source.sin_addr.s_addr = ip->saddr;
+
+            //     strcpy((char *) new_icmp_packet_source, inet_ntoa(source.sin_addr));
+
+            //     if (strcmp(new_icmp_packet_source, old_icmp_packet_source) != 0)
+            //     {   
+            //         resolveToHostname(new_icmp_packet_source);
+            //         printf("(%s)   ", new_icmp_packet_source);
+            //     }
+                
+            //     strcpy(old_icmp_packet_source, new_icmp_packet_source);
+
+            // }
+
+            // free(res_icmp);
+            // free(res_raw);
+
+            // double time_spent;
+
+            // if (end != 0)
+            // {
+            //     time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+            //     printf ("%.3f ms   ", time_spent * 1000);
+            // }
 
         }
 
