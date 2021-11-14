@@ -3,3 +3,5 @@ all:
 
 clean:
 	rm traceroute
+	rm test
+	sudo rm -r bin_files

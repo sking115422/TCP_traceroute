@@ -231,6 +231,35 @@ struct recv_return
     return (void*) result_ptr; 
 }
 
+int writeBufToFile (unsigned char * buf, int i, int j, int bytes_recieved)
+{
+
+    char path [50];
+    snprintf(path, sizeof(path), "bin_files/file_%d%d", i, j);
+
+    system("mkdir bin_files");
+
+    FILE * fp;
+
+    fp = fopen(path, "wb");
+
+    if (fp == NULL)
+        perror("file_open");
+
+
+    size_t elem_writ = fwrite(&buf, 1, bytes_recieved, fp);
+
+    fclose(fp);
+    
+    if(elem_writ == 0)
+    {
+        printf("error writting\n");
+    }
+
+
+    return 0;
+}
+
 
 int main(int argc, char **argv) 
 {
@@ -458,7 +487,10 @@ int main(int argc, char **argv)
             }
 
             if (res_raw->bytes_recieved > 0)
-            {
+            {   
+                printf("bytes_recieved: %d\n\n", res_raw->bytes_recieved);
+
+                // writeBufToFile(res_raw->buffer, i, j, res_raw->bytes_recieved);
 
                 struct sockaddr_in source;
                 struct sockaddr_in dest;
@@ -472,16 +504,14 @@ int main(int argc, char **argv)
                 printf("\nIP Header\n");
                 printf("\t|-Version : %d\n",(unsigned int)ip->version);
                 printf("\t|-Internet Header Length : %d DWORDS or %d Bytes\n",(unsigned int)ip->ihl,((unsigned int)(ip->ihl))*4);
-                printf("\t|-Type Of Service : %d\n",(unsigned int)ip->tos);
                 printf("\t|-Total Length : %d Bytes\n",ntohs(ip->tot_len));
-                printf("\t|-Identification : %d\n",ntohs(ip->id));
                 printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
                 printf("\t|-Protocol : %d\n",(unsigned int)ip->protocol);
                 printf("\t|-Header Checksum : %d\n",ntohs(ip->check));
                 printf("\t|-Destination IP : %s\n",inet_ntoa(dest.sin_addr));
                 printf("\t|-Source IP : %s\n",inet_ntoa(source.sin_addr));
 
-                struct tcphdr *tcp_hdr = (struct tcphdr *)(res_icmp->buffer + sizeof(struct iphdr) + 1);
+                struct tcphdr *tcp_hdr = (struct tcphdr *)(res_icmp->buffer + sizeof(struct iphdr));
 
                 // sizeof(struct iphdr)
 
