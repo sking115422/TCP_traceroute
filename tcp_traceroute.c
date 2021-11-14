@@ -26,6 +26,8 @@
 #include <netinet/ip.h> 
 #include <netinet/ip_icmp.h>
 #include <netinet/tcp.h>
+#include <linux/types.h>
+#include <asm/byteorder.h>
 
 
 //Header files for more general network needs
@@ -231,6 +233,9 @@ struct recv_return
     return (void*) result_ptr; 
 }
 
+
+
+
 int writeBufToFile (unsigned char * buf, int i, int j, int bytes_recieved)
 {
 
@@ -420,15 +425,13 @@ int main(int argc, char **argv)
         for (int j = 0; j < 3; j++)
         {   
             clock_t begin = clock();
+            clock_t end_icmp;
+            clock_t end_raw;
 
             if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
             {
                 perror("sendto failed");
             }
-
-            clock_t end = 0;
-
-
 
             struct sockaddr saddr_icmp;
             int saddr_size_icmp = sizeof(saddr_icmp);
@@ -486,91 +489,118 @@ int main(int argc, char **argv)
                 perror("pthread_icmp_join");
             }
 
-            if (res_raw->bytes_recieved > 0)
-            {   
-                printf("bytes_recieved: %d\n\n", res_raw->bytes_recieved);
+            if (res_icmp->bytes_recieved < 0)
+            {
+                
+
+                // printf("bytes_recieved: %d\n\n", res_raw->bytes_recieved);
 
                 // writeBufToFile(res_raw->buffer, i, j, res_raw->bytes_recieved);
+
+                unsigned char * buf_ptr = res_raw->buffer;
+                int ptr_mover = 0;
+
+                char * dest_reached_ip = NULL;
+
+                while (ptr_mover < res_raw->bytes_recieved)
+                { 
+
+                    struct iphdr *ip = (struct iphdr*)(buf_ptr + ptr_mover);
+                    ptr_mover = ptr_mover + sizeof(struct iphdr);
+
+                    struct tcphdr *tcp_hdr = (struct tcphdr *)(buf_ptr + ptr_mover);
+                    ptr_mover = ptr_mover + ntohs(ip->tot_len) - sizeof(struct iphdr);
+
+
+                    struct sockaddr_in source;
+                    struct sockaddr_in dest;
+
+                    memset(&source, 0, sizeof(source));
+                    source.sin_addr.s_addr = ip->saddr;
+                    memset(&dest, 0, sizeof(dest));
+                    dest.sin_addr.s_addr = ip->daddr;
+
+                    if (strcmp(inet_ntoa(dest.sin_addr), source_ip) == 0 && ((int) tcp_hdr->th_flags == 18 || (int) tcp_hdr->th_flags == 4))
+                    {
+
+                        printf("\nIP Header\n");
+                        printf("\t|-Version : %d\n",(unsigned int)ip->version);
+                        printf("\t|-Internet Header Length : %d DWORDS or %d Bytes\n",(unsigned int)ip->ihl,((unsigned int)(ip->ihl))*4);
+                        printf("\t|-Total Length : %d Bytes\n", ntohs(ip->tot_len));
+                        printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
+                        printf("\t|-Protocol : %d\n",(unsigned int)ip->protocol);
+                        printf("\t|-Header Checksum : %d\n", ntohs(ip->check));
+                        printf("\t|-Destination IP : %s\n", inet_ntoa(dest.sin_addr));
+                        printf("\t|-Source IP : %s\n", inet_ntoa(source.sin_addr));
+
+                        printf("\nTCP Header\n");
+                        printf("\t|-Source Port : %d\n", ntohs(tcp_hdr->th_sport));
+                        printf("\t|-Destination Port : %d\n", ntohs(tcp_hdr->dest));
+                        printf("\t|-Seq Number : %ld\n", (long) tcp_hdr->th_seq);
+                        printf("\t|-Ack Number : %ld\n", (long) tcp_hdr->th_ack);
+                        printf("\t|-Flags : %d\n", (int) tcp_hdr->th_flags);
+
+                        dest_reached_ip = inet_ntoa(source.sin_addr);
+                        end_raw = res_raw->clock_end;
+
+                    }
+
+                }
+
+                if (dest_reached_ip != NULL)
+                {
+                    resolveToHostname(dest_reached_ip);
+                    printf("(%s)   ", dest_reached_ip);
+
+                    double time_spent_raw;
+                    time_spent_raw = (double)(end_raw - begin) / CLOCKS_PER_SEC;
+                    printf ("%.3f ms   ", time_spent_raw * 1000);
+
+                    printf("Target destination reached\n");
+
+                    exit(1);
+                }
+
+                else 
+                {
+                    printf("*   ");
+                }
+                
+            }
+
+            else
+            {   
+                
+
+                end_icmp = res_icmp->clock_end;
 
                 struct sockaddr_in source;
                 struct sockaddr_in dest;
 
+                unsigned short iphdrlen;
                 struct iphdr *ip = (struct iphdr*)(res_icmp->buffer);
                 memset(&source, 0, sizeof(source));
                 source.sin_addr.s_addr = ip->saddr;
-                memset(&dest, 0, sizeof(dest));
-                dest.sin_addr.s_addr = ip->daddr;
 
-                printf("\nIP Header\n");
-                printf("\t|-Version : %d\n",(unsigned int)ip->version);
-                printf("\t|-Internet Header Length : %d DWORDS or %d Bytes\n",(unsigned int)ip->ihl,((unsigned int)(ip->ihl))*4);
-                printf("\t|-Total Length : %d Bytes\n",ntohs(ip->tot_len));
-                printf("\t|-Time To Live : %d\n",(unsigned int)ip->ttl);
-                printf("\t|-Protocol : %d\n",(unsigned int)ip->protocol);
-                printf("\t|-Header Checksum : %d\n",ntohs(ip->check));
-                printf("\t|-Destination IP : %s\n",inet_ntoa(dest.sin_addr));
-                printf("\t|-Source IP : %s\n",inet_ntoa(source.sin_addr));
+                strcpy((char *) new_icmp_packet_source, inet_ntoa(source.sin_addr));
 
-                struct tcphdr *tcp_hdr = (struct tcphdr *)(res_icmp->buffer + sizeof(struct iphdr));
+                if (strcmp(new_icmp_packet_source, old_icmp_packet_source) != 0)
+                {   
+                    resolveToHostname(new_icmp_packet_source);
+                    printf("(%s)   ", new_icmp_packet_source);
+                }
+                
+                strcpy(old_icmp_packet_source, new_icmp_packet_source);
 
-                // sizeof(struct iphdr)
+                double time_spent_icmp;
 
-
-                printf("\nTCP Header\n");
-                printf("\t|-Source Port : %d\n", (unsigned short) tcp_hdr->th_sport);
-                printf("\t|-Destination Port : %d\n", (unsigned short) tcp_hdr->dest);
-                printf("\t|-Seq Number : %d\n", tcp_hdr->th_seq);
-                printf("\t|-Ack Number : %d\n", tcp_hdr->th_ack);
-                printf("\t|-Flags : %d\n", (unsigned char) tcp_hdr->th_flags);
-                printf("\t|-Window : %d\n", (unsigned char) tcp_hdr->th_win);
-                printf("\t|-Checksum : %d\n", (unsigned char) tcp_hdr->th_sum);
-
-
-
+                time_spent_icmp = (double)(end_icmp - begin) / CLOCKS_PER_SEC;
+                printf ("%.3f ms   ", time_spent_icmp * 1000);               
 
             }
 
-            // else if (res_icmp->bytes_recieved < 0)
-            // {
-            //     printf("*   ");
-            // }
-
-            // else
-            // {   
-                
-
-            //     end = res_icmp->clock_end;
-
-            //     struct sockaddr_in source;
-            //     struct sockaddr_in dest;
-
-            //     unsigned short iphdrlen;
-            //     struct iphdr *ip = (struct iphdr*)(res_icmp->buffer);
-            //     memset(&source, 0, sizeof(source));
-            //     source.sin_addr.s_addr = ip->saddr;
-
-            //     strcpy((char *) new_icmp_packet_source, inet_ntoa(source.sin_addr));
-
-            //     if (strcmp(new_icmp_packet_source, old_icmp_packet_source) != 0)
-            //     {   
-            //         resolveToHostname(new_icmp_packet_source);
-            //         printf("(%s)   ", new_icmp_packet_source);
-            //     }
-                
-            //     strcpy(old_icmp_packet_source, new_icmp_packet_source);
-
-            // }
-
-            // free(res_icmp);
-            // free(res_raw);
-
-            // double time_spent;
-
-            // if (end != 0)
-            // {
-            //     time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
-            //     printf ("%.3f ms   ", time_spent * 1000);
-            // }
+            free(res_icmp);
+            free(res_raw);
 
         }
 
@@ -582,7 +612,7 @@ int main(int argc, char **argv)
     close (recvsock_icmp);
     close (recvsock_raw);
 
-    printf("done...\n");
+    printf("Target destination not reachable...\n");
 
     return 0;
 
