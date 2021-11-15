@@ -440,10 +440,11 @@ int main(int argc, char **argv)
 
                     dest_reached_ip = inet_ntoa(source.sin_addr);
 
-                    end = clock();
+                    
 
                     if (strcmp(inet_ntoa(source.sin_addr), target_ip) == 0 && (int) ntohs(tcp_hdr->dest) == tcp_local_port && ((int) tcp_hdr->th_flags == 18 || (int) tcp_hdr->th_flags == 4))
                     {
+                        end = clock();
                         success = 1;
                         global_success = 1;
                         break;
