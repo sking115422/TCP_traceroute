@@ -259,7 +259,7 @@ int main(int argc, char **argv)
 
         if (global_success == 1)
         {
-            printf("SYN-ACK or RST packet received from target server. Target successfully reached!\n");
+            printf("SYN-ACK or RST packet received from target server. Target successfully reached!\n\n");
             exit(1);
         }
 
