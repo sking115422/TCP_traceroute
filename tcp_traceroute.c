@@ -1,3 +1,5 @@
+
+//General header files
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h> 
@@ -6,19 +8,34 @@
 #include <ctype.h>
 #include <signal.h>
 #include <time.h>
+#include <sys/time.h>
 #include <errno.h>
+#include <sys/select.h>
 
+//Hedaer files for mutli-threading
+#include <pthread.h>
+
+//Header files for socket programming
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h> 
-#include <netinet/ip.h> 
-#include <arpa/inet.h>
-#include <netdb.h>
+
+//Header files for network packet manipulation
 
 #include <netinet/if_ether.h>
 #include <net/ethernet.h>
 #include <netinet/ether.h>
+#include <netinet/ip.h> 
+#include <netinet/ip_icmp.h>
+#include <netinet/tcp.h>
+#include <linux/types.h>
+#include <asm/byteorder.h>
+
+
+//Header files for more general network needs
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+
 
 
 
@@ -350,7 +367,10 @@ int main(int argc, char **argv)
         for (int j = 0; j < 3; j++)
         {   
 
-            clock_t begin = clock();
+            struct timeval tv1;
+            struct timeval tv2;
+            gettimeofday(&tv1, NULL);
+
             int print_time = 1;
             int success = 0;
 
@@ -361,7 +381,7 @@ int main(int argc, char **argv)
             }
 
 
-            clock_t end;
+
 
 
             unsigned char * buffer_icmp = (unsigned char *) malloc(15000);
@@ -375,8 +395,7 @@ int main(int argc, char **argv)
 
             if(bytes_recieved_icmp > 0)
             {
-                end = clock();
-                
+                gettimeofday(&tv2, NULL);
 
                 struct ethhdr *eth = (struct ethhdr *)(buffer_icmp);
 
@@ -444,7 +463,7 @@ int main(int argc, char **argv)
 
                     if (strcmp(inet_ntoa(source.sin_addr), target_ip) == 0 && (int) ntohs(tcp_hdr->dest) == tcp_local_port && ((int) tcp_hdr->th_flags == 18 || (int) tcp_hdr->th_flags == 4))
                     {
-                        end = clock();
+                        gettimeofday(&tv2, NULL);
                         success = 1;
                         global_success = 1;
                         break;
@@ -476,12 +495,12 @@ int main(int argc, char **argv)
                 
             }
 
-            double time_spent;
+            double time_elapsed;
 
             if (print_time == 1)
             {
-                time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
-                printf ("%.3f ms   ", time_spent * 1000);
+                time_elapsed = (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec);
+                printf ("%.3f ms   ", time_elapsed * 1000); 
             }
 
         }

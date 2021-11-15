@@ -18,25 +18,29 @@
 #include <netdb.h>
 #include <errno.h> //For errno - the error number
 
+int global_var;
 
+void exitflag(int sig)
+{
+    global_var = 1;
+}
 
 int main(int argc, char **argv) 
 {
     
     for(int i = 1; i < 4; i++)
     {
+        global_var = 0;
+        signal(SIGALRM, exitflag);
+        alarm(5);
+        while (global_var == 0) {
+            
+            
+            printf("this thing %d\n", i);
+            sleep(1);
 
-        time_t startTime;
-        time_t now;
-        float elapsedTime;
-        float setTime = 5;
 
-        time(&startTime);
-        while (elapsedTime < setTime) {
-            //do something...
 
-            now = time(NULL);
-            elapsedTime = difftime(now, startTime);
         }
     } 
 
