@@ -37,7 +37,6 @@
 
 
 
-
 struct pseudo_header
 {
     u_int32_t source_address;
@@ -197,6 +196,7 @@ struct recv_args
     unsigned char * buffer;
     struct sockaddr saddr;
     int saddr_size;
+    int packets_to_recv;
 };
 
 struct recv_return
@@ -204,23 +204,22 @@ struct recv_return
     int bytes_recieved;
     unsigned char * buffer;
     clock_t clock_end;
-
-
 };
 
 
- void * recvPackets (void * arg)
+void * recvPackets (void * arg)
 {
 
     struct recv_args vars = *(struct recv_args *) arg;
-    struct recv_return rtn;
 
     int socket = vars.socket;
     unsigned char * buffer = vars.buffer;
     struct sockaddr saddr = vars.saddr;
     int saddr_size = vars.saddr_size;
 
-    int bytes_recieved = recvfrom(socket, buffer, 65536, 0, &saddr, &saddr_size);
+    struct recv_return rtn;
+
+    int bytes_recieved = recvfrom(socket, buffer, 1600, 0, &saddr, &saddr_size);
 
     rtn.clock_end = clock();
     rtn.bytes_recieved = bytes_recieved;
@@ -234,6 +233,48 @@ struct recv_return
 }
 
 
+void * recvPacketsRaw (void * arg)
+{
+
+    struct recv_args vars = *(struct recv_args *) arg;
+    
+    int socket = vars.socket;
+    unsigned char * buffer = vars.buffer;
+    struct sockaddr saddr = vars.saddr;
+    int saddr_size = vars.saddr_size;
+    int packets_to_recv = vars.packets_to_recv;
+
+    struct recv_return rtn [packets_to_recv];
+
+    int count = 0;
+
+    time_t startTime;
+    time_t now;
+    float elapsedTime;
+    float setTime = .0001;
+
+    time(&startTime);
+    while (elapsedTime < setTime)
+    {
+        int bytes_recieved = recvfrom(socket, buffer, 1600, 0, &saddr, &saddr_size);
+
+        rtn[count].clock_end = clock();
+        rtn[count].bytes_recieved = bytes_recieved;
+        rtn[count].buffer = buffer;
+
+        count ++;
+
+        now = time(NULL);
+        elapsedTime = difftime(now, startTime);
+
+    }
+
+    struct recv_return *result_ptr = (struct recv_return*) malloc(sizeof(struct recv_return)*packets_to_recv);
+
+    *result_ptr = rtn[packets_to_recv];
+
+    return (void*) result_ptr; 
+}
 
 
 int writeBufToFile (unsigned char * buf, int i, int j, int bytes_recieved)
@@ -300,16 +341,22 @@ int main(int argc, char **argv)
         }
     }
 
+
+    
+
     int portnum = atoi(DST_PORT);
     char * target_ip = resolveToIP(TARGET, portnum);
     int max_hops = atoi(MAX_HOPS);
-
     char * local_ip = get_Local_Broadcast_IP();
+    int num_raw_packets_recv = 100000;
 
     printf("\nTCP_Traceroute to %s (%s), %s hops max, TCP SYN to port %s\n", TARGET, target_ip, MAX_HOPS, DST_PORT);
     printf("\n");
     
     int sendsock = socket (AF_INET, SOCK_RAW, IPPROTO_TCP);
+
+    
+
 
     int one = 1;
     const int *val = &one;
@@ -319,6 +366,8 @@ int main(int argc, char **argv)
         perror("Error setting IP_HDRINCL");
         exit(0);
     }
+
+    
 
     int recvsock_icmp = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     int recvsock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
@@ -338,6 +387,8 @@ int main(int argc, char **argv)
         perror("Error setting socket timeout");
         exit(0);
     }
+
+    
 
     for (int i = 1; i < max_hops + 1; i++)
     {
@@ -365,8 +416,6 @@ int main(int argc, char **argv)
         sin.sin_family = AF_INET;
         sin.sin_port = htons(portnum);
         sin.sin_addr.s_addr = inet_addr (target_ip);
-
-        // printf ("\n\nsource_ip: %s\n\n", source_ip);
 
         //Fill in the IP Header
         iph->ihl = 5;
@@ -439,8 +488,8 @@ int main(int argc, char **argv)
             struct recv_args input_icmp;
             struct recv_return *res_icmp;
 
-            unsigned char * buffer_icmp = (unsigned char *) malloc(65536);
-            memset(buffer_icmp, 0 ,65536);
+            unsigned char * buffer_icmp = (unsigned char *) malloc(1600);
+            memset(buffer_icmp, 0 ,1600);
 
             input_icmp.buffer = buffer_icmp;
             input_icmp.saddr = saddr_icmp;
@@ -455,26 +504,27 @@ int main(int argc, char **argv)
             int saddr_size_raw = sizeof(saddr_raw);
 
             struct recv_args input_raw;
-            struct recv_return *res_raw;
+            struct recv_return *res_raw [num_raw_packets_recv];
 
-            unsigned char * buffer_raw = (unsigned char *) malloc(65536);
-            memset(buffer_raw, 0 ,65536);
+            unsigned char * buffer_raw = (unsigned char *) malloc(1600);
+            memset(buffer_raw, 0 ,1600);
 
             input_raw.buffer = buffer_raw;
             input_raw.saddr = saddr_raw;
             input_raw.saddr_size = saddr_size_raw;
             input_raw.socket = recvsock_raw;
+            input_raw.packets_to_recv = num_raw_packets_recv;
 
             pthread_t t_raw;
 
-
+            
 
             if (pthread_create(&t_icmp, NULL, &recvPackets, &input_icmp) != 0)
             {
                 perror("pthread_icmp");
             }
 
-            if (pthread_create(&t_raw, NULL, &recvPackets, &input_raw) != 0)
+            if (pthread_create(&t_raw, NULL, &recvPacketsRaw, &input_raw) != 0)
             {
                 perror("pthread_raw");
             }
@@ -484,7 +534,7 @@ int main(int argc, char **argv)
                 perror("pthread_icmp_join");
             }
 
-            if (pthread_join(t_raw, (void **) &res_raw) != 0)
+            if (pthread_join(t_raw, (void **) &res_raw [num_raw_packets_recv]) != 0)
             {
                 perror("pthread_icmp_join");
             }
@@ -497,13 +547,16 @@ int main(int argc, char **argv)
 
                 // writeBufToFile(res_raw->buffer, i, j, res_raw->bytes_recieved);
 
-                unsigned char * buf_ptr = res_raw->buffer;
-                int ptr_mover = 0;
-
                 char * dest_reached_ip = NULL;
+                int count = 0;
 
-                while (ptr_mover < res_raw->bytes_recieved)
+                while (count < num_raw_packets_recv)
                 { 
+
+                    unsigned char * buf_ptr = res_raw[count]->buffer ;
+                    int ptr_mover = 0;
+
+                    
 
                     struct iphdr *ip = (struct iphdr*)(buf_ptr + ptr_mover);
                     ptr_mover = ptr_mover + sizeof(struct iphdr);
@@ -541,7 +594,9 @@ int main(int argc, char **argv)
                         printf("\t|-Flags : %d\n", (int) tcp_hdr->th_flags);
 
                         dest_reached_ip = inet_ntoa(source.sin_addr);
-                        end_raw = res_raw->clock_end;
+                        end_raw = res_raw[count]->clock_end;
+
+                        count ++;
 
                     }
 
@@ -554,7 +609,7 @@ int main(int argc, char **argv)
 
                     double time_spent_raw;
                     time_spent_raw = (double)(end_raw - begin) / CLOCKS_PER_SEC;
-                    printf ("%.3f ms   ", time_spent_raw * 1000);
+                    printf ("%.3f ms   ", time_spent_raw * num_raw_packets_recv);
 
                     printf("Target destination reached\n");
 
@@ -595,7 +650,7 @@ int main(int argc, char **argv)
                 double time_spent_icmp;
 
                 time_spent_icmp = (double)(end_icmp - begin) / CLOCKS_PER_SEC;
-                printf ("%.3f ms   ", time_spent_icmp * 1000);               
+                printf ("%.3f ms   ", time_spent_icmp * num_raw_packets_recv);               
 
             }
 

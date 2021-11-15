@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <signal.h>
 #include <pthread.h>
+#include <time.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -18,23 +19,24 @@
 #include <errno.h> //For errno - the error number
 
 
-void* routine() 
-{
-    printf("Test pthreading\n");
-    sleep(3);
-    printf("Ending thread\n");
-}
 
 int main(int argc, char **argv) 
 {
 
-    pthread_t t1;
-    pthread_t t2;
-    
-    pthread_create(&t1, NULL, &routine, NULL);
-    pthread_create(&t2, NULL, &routine, NULL);
-    pthread_join(t1, NULL);
-    pthread_join(t2, NULL);
+    time_t startTime;
+    time_t now;
+    float elapsedTime;
+    float setTime = 5;
+
+    time(&startTime);
+    while (elapsedTime < setTime) {
+        
+        
+        printf("i love to code");
+
+        now = time(NULL);
+        elapsedTime = difftime(now, startTime);
+    }
 
     return 0;
 
