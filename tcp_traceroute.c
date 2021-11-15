@@ -37,7 +37,12 @@
 #include <netdb.h>
 
 
+int search_end_flag;
 
+void exitflag(int sig)
+{
+    search_end_flag = 1;
+}
 
 
 int checkStringIsNumeric (char *str)
@@ -233,7 +238,11 @@ int main(int argc, char **argv)
 
     char * local_ip = get_Local_Broadcast_IP();
     int tcp_local_port = 12345;
-    int num_packets_to_recv = 50;
+    int max_search_time = 4;
+
+    struct timeval tv;
+    tv.tv_sec = 4;
+    tv.tv_usec = 400000;
 
     printf("\nTCP_Traceroute to %s (%s), %s hops max, TCP SYN to port %s\n", TARGET, target_ip, MAX_HOPS, DST_PORT);
     printf("\n");
@@ -252,10 +261,6 @@ int main(int argc, char **argv)
     int recvsock_icmp = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
     int recvsock_raw = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     
-    struct timeval tv;
-    tv.tv_sec = 5;
-    tv.tv_usec = 500000;
-
     if (setsockopt(recvsock_icmp, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&tv,sizeof(struct timeval)) < 0)
     {
         perror("Error setting socket timeout");
@@ -269,10 +274,10 @@ int main(int argc, char **argv)
     }
 
     int global_success = 0;
-    int icmp_from_target = 0;
 
     for (int i = 1; i < max_hops + 1; i++)
     {
+        int icmp_from_target = 0;
 
         if (global_success == 1)
         {
@@ -381,9 +386,6 @@ int main(int argc, char **argv)
             }
 
 
-
-
-
             unsigned char * buffer_icmp = (unsigned char *) malloc(15000);
             memset(buffer_icmp, 0 ,15000);
 
@@ -434,8 +436,10 @@ int main(int argc, char **argv)
 
                 char * dest_reached_ip = NULL;
 
-                int counter = 0;
-                while (counter < num_packets_to_recv)
+                search_end_flag = 0;
+                signal(SIGALRM, exitflag);
+                alarm(max_search_time);
+                while (search_end_flag == 0)
                 {
                     int bytes_recieved = recvfrom(recvsock_raw, buffer_raw, 1600, 0, &saddr_raw, &saddr_size_raw);
 
@@ -468,8 +472,6 @@ int main(int argc, char **argv)
                         global_success = 1;
                         break;
                     }
-  
-                    counter ++;
 
                 }
 
@@ -507,7 +509,8 @@ int main(int argc, char **argv)
 
         if (icmp_from_target == 1)
         {
-            printf ("\nICMP packet received from target IP... Target has been reached!");
+            printf ("\n |");
+            printf ("\n '--> ICMP packet received from target IP... Target has been reached!");
         }
 
         printf("\n\n");
