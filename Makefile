@@ -1,5 +1,5 @@
 all:
-	gcc tcp_traceroute.c -o traceroute 
+	gcc tcp_traceroute.c -o tcp_traceroute 
 
 clean:
-	rm traceroute
+	rm tcp_traceroute
