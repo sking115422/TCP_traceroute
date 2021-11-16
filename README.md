@@ -20,14 +20,14 @@ $ ./tcp_traceroute.py -h
 
 usage: tcp_traceroute.py [-m MAX_HOPS] [-p DST_PORT] -t TARGET
 
-Run to start a tcp_traceroute 
+Run to start a tcp_traceroute session
 
 Optional arguments:
 * -h, --help   show this help message and exit
 * -m   MAX_HOPS  Max hops to probe (default = 30)
 * -p   DST_PORT  TCP destination port (default = 80)
-* -t   TARGET    Target domain or IP
+* -t   TARGET    Target domain or IP (default = google.com)
 
 ## Example Command Line Syntax
 
-sudo python3 ./dns_forwarder.py --doh_server 8.8.8.8 -l queries.log -f deny_list.txt
+sudo ./tcp_traceroute -t example.com 
