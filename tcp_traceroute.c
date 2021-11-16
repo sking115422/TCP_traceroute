@@ -24,6 +24,7 @@ This program emulates the standard implimentation of traceroute in Linux however
 #include <ctype.h>
 #include <signal.h>
 #include <time.h>
+#include <math.h>
 #include <sys/time.h>
 #include <errno.h>
 
@@ -45,12 +46,19 @@ This program emulates the standard implimentation of traceroute in Linux however
 ////HELPER FUNCTIONS AND STRUCTS
 
 
-//Global flag for ending raw packet gathering 
+//Global flags for ending raw packet gathering 
 int search_end_flag;
 
-void exitflag(int sig)
+void exitflag()
 {
     search_end_flag = 1;
+}
+
+int search_end_flag_2;
+
+void exitflag2()
+{
+    search_end_flag_2 = 1;
 }
 
 
@@ -257,12 +265,13 @@ int main(int argc, char **argv)
     int tcp_local_port = 12345;
 
     //Setting maximum number of seconds to search for raw tcp packets
-    int max_search_time = 4;
+    int max_search_time = 2;
 
     //Setting socket time out values
     struct timeval tv;
     tv.tv_sec = 4;
-    tv.tv_usec = 400000;
+    tv.tv_usec = 0;
+    //100000
 
     //TCP_traceroute intro program statement
     printf("\nTCP_Traceroute to %s (%s), %s hops max, TCP SYN to port %s\n", TARGET, target_ip, MAX_HOPS, DST_PORT);
@@ -464,69 +473,127 @@ int main(int argc, char **argv)
 
             //If no ICMP packet is recieved 
             else
-            {
-                
-                ////Setting up variable and structs to read in RAW packet information
-                unsigned char * buffer_raw = (unsigned char *) malloc(65535);
-                memset(buffer_raw, 0 ,65535);
-                struct sockaddr saddr_raw;
-                int saddr_size_raw = sizeof(saddr_raw);
+            { 
 
                 //Variable to save destination reached (source IP of received packet)
                 char * dest_reached_ip = NULL;
-                
-                //Timer to only let while loop run for a specific period of time
-                search_end_flag = 0;
-                signal(SIGALRM, exitflag);
-                alarm(max_search_time);
 
-                //While loop to collect raw packets until timer is up
-                while (search_end_flag == 0)
+                if (success == 0)
                 {
 
-                    //Attempting to receive raw TCP packets
-                    int bytes_recieved = recvfrom(recvsock_raw, buffer_raw, 65535, 0, &saddr_raw, &saddr_size_raw);
+                    ////Setting up variable and structs to read in RAW packet information
+                    unsigned char * buffer_raw = (unsigned char *) malloc(65535);
+                    memset(buffer_raw, 0 ,65535);
+                    struct sockaddr saddr_raw;
+                    int saddr_size_raw = sizeof(saddr_raw);
 
-                    //Variables to parse packet
-                    unsigned char * buf_ptr = buffer_raw;
-                    int ptr_mover = 0;
+                    //Timer to only let while loop run for a specific period of time
+                    search_end_flag = 0;
+                    signal(SIGALRM, exitflag);
+                    alarm(max_search_time);
 
-                    //Structures and variable to store packet data
-                    struct iphdr *ip = (struct iphdr*)(buf_ptr + ptr_mover);    //IP header
-                    ptr_mover = ptr_mover + sizeof(struct iphdr);
-
-                    struct tcphdr *tcp_hdr = (struct tcphdr *)(buf_ptr + ptr_mover);    //TCP header
-                    ptr_mover = ptr_mover + ntohs(ip->tot_len) - sizeof(struct iphdr);
-
-                    struct sockaddr_in source;
-                    struct sockaddr_in dest;
-
-                    memset(&source, 0, sizeof(source));
-                    source.sin_addr.s_addr = ip->saddr;
-                    memset(&dest, 0, sizeof(dest));
-                    dest.sin_addr.s_addr = ip->daddr;
-
-                    //Storing the IP of the recieved packed
-                    dest_reached_ip = inet_ntoa(source.sin_addr);
-
-                    //Filtering incoming packets until we find one that has correct parameters:
-                    //////received packet source ip == our target ip
-                    //////received packet destination port number == our port number
-                    //////received packet flags are either SYN-ACK or RST
-                    //If all conditions are met flags are set, latency timer is stopped, and we break out of the loop
-                    if (strcmp(inet_ntoa(source.sin_addr), target_ip) == 0 && (int) ntohs(tcp_hdr->dest) == tcp_local_port && ((int) tcp_hdr->th_flags == 18 || (int) tcp_hdr->th_flags == 4))
+                    //While loop to collect raw packets until timer is up
+                    while (search_end_flag == 0)
                     {
-                        gettimeofday(&tv2, NULL);
-                        success = 1;
-                        global_success = 1;
-                        break;
+
+                        //Attempting to receive raw TCP packets
+                        int bytes_recieved = recvfrom(recvsock_raw, buffer_raw, 65535, 0, &saddr_raw, &saddr_size_raw);
+
+                        //Variables to parse packet
+                        unsigned char * buf_ptr = buffer_raw;
+                        int ptr_mover = 0;
+
+                        //Structures and variable to store packet data
+                        struct iphdr *ip = (struct iphdr*)(buf_ptr + ptr_mover);    //IP header
+                        ptr_mover = ptr_mover + sizeof(struct iphdr);
+
+                        struct tcphdr *tcp_hdr = (struct tcphdr *)(buf_ptr + ptr_mover);    //TCP header
+                        ptr_mover = ptr_mover + ntohs(ip->tot_len) - sizeof(struct iphdr);
+
+                        struct sockaddr_in source;
+                        struct sockaddr_in dest;
+
+                        //Storing source and destination of received packet
+                        memset(&source, 0, sizeof(source));
+                        source.sin_addr.s_addr = ip->saddr;
+                        memset(&dest, 0, sizeof(dest));
+                        dest.sin_addr.s_addr = ip->daddr;
+
+                        //Filtering incoming packets until we find one that has correct parameters:
+                        //////received packet source ip == our target ip
+                        //////received packet destination port number == our port number
+                        //////received packet flags are either SYN-ACK or RST
+                        //If all conditions are met success flag is set, and we break out of the loop
+                        if (strcmp(inet_ntoa(source.sin_addr), target_ip) == 0 && (int) ntohs(tcp_hdr->dest) == tcp_local_port && ((int) tcp_hdr->th_flags == 18 || (int) tcp_hdr->th_flags == 4))
+                        {
+                            success = 1;
+                            break;
+                        }
+
                     }
 
                 }
                 
-                //If correct correct raw TCP packet (SYN-ACK or RST) is recieved we will print its source IP
+                //If correct correct raw TCP packet (SYN-ACK or RST), We know target has been reached.
+                //We will now again send out another packet to get the correct latency to the target destination 
                 if (success == 1)
                 {
+                    
+                    //Start timer
+                    gettimeofday(&tv1, NULL);
+
+                    //Sending packet out
+                    if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
+                    {
+                        perror("sendto failed");
+                    }
+
+                    //Below is almost exactly the same as what we did above the first time to confirm target destination has been reached
+
+                    unsigned char * buffer_raw_2 = (unsigned char *) malloc(65535);
+                    memset(buffer_raw_2, 0 ,65535);
+                    struct sockaddr saddr_raw_2;
+                    int saddr_size_raw_2 = sizeof(saddr_raw_2);
+                    
+                    search_end_flag_2 = 0;
+                    signal(SIGALRM, exitflag2);
+                    alarm( (int) ceil(max_search_time/2));
+
+                    while (search_end_flag_2 == 0)
+                    {
+
+                        
+                        int bytes_recieved_2 = recvfrom(recvsock_raw, buffer_raw_2, 65535, 0, &saddr_raw_2, &saddr_size_raw_2);
+
+                        unsigned char * buf_ptr_2 = buffer_raw_2;
+                        int ptr_mover_2 = 0;
+
+                        struct iphdr *ip_2 = (struct iphdr*)(buf_ptr_2 + ptr_mover_2);    
+                        ptr_mover_2 = ptr_mover_2 + sizeof(struct iphdr);
+
+                        struct tcphdr *tcp_hdr_2 = (struct tcphdr *)(buf_ptr_2 + ptr_mover_2);    
+                        ptr_mover_2 = ptr_mover_2 + ntohs(ip_2->tot_len) - sizeof(struct iphdr);
+
+                        struct sockaddr_in source_2;
+                        struct sockaddr_in dest_2;
+
+                        memset(&source_2, 0, sizeof(source_2));
+                        source_2.sin_addr.s_addr = ip_2->saddr;
+
+                        dest_reached_ip = inet_ntoa(source_2.sin_addr);
+
+                        //Now when we find a packer that has correct parameters:
+                        //////we end timer
+                        //////set global success flag so we only send last three probes then program knows to exit
+                        if (strcmp(inet_ntoa(source_2.sin_addr), target_ip) == 0 && (int) ntohs(tcp_hdr_2->dest) == tcp_local_port && ((int) tcp_hdr_2->th_flags == 18 || (int) tcp_hdr_2->th_flags == 4))
+                        {
+                            gettimeofday(&tv2, NULL);
+                            global_success = 1;
+                            
+                            break;
+                        }
+
+                    }
 
                     //Following series of If-statements make sure the source address is only printed if it is a new source address
                     strcpy((char *) new_raw_packet_source, dest_reached_ip);
@@ -554,11 +621,7 @@ int main(int argc, char **argv)
             if (print_time == 1)
             {
                 time_elapsed = (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec);
-
-                if (time_elapsed > max_search_time * .8)
-                    printf ("%.3f ms   ", time_elapsed * 1000 - (double) (max_search_time * 1000 * .99)); 
-                else
-                    printf ("%.3f ms   ", time_elapsed * 1000);
+                printf ("%.3f ms   ", time_elapsed * 1000);
             }
 
         }
