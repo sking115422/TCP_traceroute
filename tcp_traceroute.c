@@ -380,7 +380,6 @@ int main(int argc, char **argv)
         tcph->check = 0; //leave checksum 0 now, filled later by pseudo header
         tcph->urg_ptr = 0;
 
-
         //Now the TCP checksum
         psh.source_address = inet_addr(source_ip);
         psh.dest_address = sin.sin_addr.s_addr;
@@ -580,6 +579,7 @@ int main(int argc, char **argv)
                         memset(&source_2, 0, sizeof(source_2));
                         source_2.sin_addr.s_addr = ip_2->saddr;
 
+                        //Assigning recieved packet source ip to usable variable
                         dest_reached_ip = inet_ntoa(source_2.sin_addr);
 
                         //Now when we find a packer that has correct parameters:
@@ -616,7 +616,7 @@ int main(int argc, char **argv)
                 
             }
 
-            //if "*" is not printed we print the latency time 
+            //if "*" is not printed, we print the latency time 
             double time_elapsed;
             if (print_time == 1)
             {
