@@ -261,9 +261,9 @@ int main(int argc, char **argv)
 
     //Setting socket time out values
     struct timeval tv;
-    tv.tv_sec = 4;
-    tv.tv_usec = 400000;
-
+    tv.tv_sec = 5;
+    tv.tv_usec = 000001;
+    
     //TCP_traceroute intro program statement
     printf("\nTCP_Traceroute to %s (%s), %s hops max, TCP SYN to port %s\n", TARGET, target_ip, MAX_HOPS, DST_PORT);
     printf("\n");
@@ -300,13 +300,14 @@ int main(int argc, char **argv)
 
     //Variable to terminate program after target is successfully found
     int global_success = 0;
-
+    int icmp_from_target;
     //Master for-loop that controls number of hops we will send probes for
     for (int i = 1; i < max_hops + 1; i++)
     {   
         
         //Flag used to caputure if ICMP packet are returned from target destination
-        int icmp_from_target = 0;
+        icmp_from_target = 0;
+
 
         //Ending program if target is reached successfully
         if (global_success == 1)
@@ -385,7 +386,7 @@ int main(int argc, char **argv)
         tcph->check = csum( (unsigned short*) pseudogram , psize);
 
         //Printing to console the current number of hops we are probing for
-        printf("%d   ", i);
+        printf("%d   ",     i);
 
         //Creating variables to handle printing of ICMP packet source IP addresses
         char new_icmp_packet_source [16];
@@ -399,17 +400,21 @@ int main(int argc, char **argv)
         memset(new_raw_packet_source, 0 , 16);
         memset(old_raw_packet_source, 0 , 16);
 
+        //Variables for tracking latency (time take to send and receive packets)
+        struct timeval tv1_icmp, tv2_icmp;
+        struct timeval tv1_raw, tv2_raw;
+        double time_elapsed;        
+
+        int print_time;
         //Inner for-loop to control the number of probes sent each hop (3 in this case as in standard traceroute)
         for (int j = 0; j < 3; j++)
         {   
-
-            //Variable for tracking latency (time take to send and receive packets)
-            struct timeval tv1;
-            struct timeval tv2;
-            gettimeofday(&tv1, NULL);
-
+            
             //Variable to allow time to be printed
-            int print_time = 1;
+            print_time = 0;
+            int icmp_recv_flag = 0;
+            
+            gettimeofday(&tv1_icmp, NULL);
 
             //Variable that accounts for if SYN-ACK or RST packets have been recieved from target (this = success)
             int success = 0;
@@ -431,10 +436,13 @@ int main(int argc, char **argv)
 
             //If ICMP packet is recieved
             if(bytes_recieved_icmp > 0)
-            {
-
+            {   
+                
                 //End timer for latency
-                gettimeofday(&tv2, NULL);
+                gettimeofday(&tv2_icmp, NULL);
+
+                icmp_recv_flag = 1;
+                print_time = 1;
 
                 //Setting up variable and structs to read in ICMP packet information
                 struct iphdr *ip = (struct iphdr*)(buffer_icmp);
@@ -463,8 +471,15 @@ int main(int argc, char **argv)
             }
 
             //If no ICMP packet is recieved 
-            else
+            if (icmp_recv_flag == 0)
             {
+                gettimeofday(&tv1_raw, NULL);
+
+                //Sending packet out
+                if (sendto (sendsock, datagram, iph->tot_len, 0, (struct sockaddr *) &sin, sizeof (sin)) < 0)
+                {
+                    perror("sendto failed");
+                }
                 
                 ////Setting up variable and structs to read in RAW packet information
                 unsigned char * buffer_raw = (unsigned char *) malloc(65535);
@@ -516,7 +531,8 @@ int main(int argc, char **argv)
                     //If all conditions are met flags are set, latency timer is stopped, and we break out of the loop
                     if (strcmp(inet_ntoa(source.sin_addr), target_ip) == 0 && (int) ntohs(tcp_hdr->dest) == tcp_local_port && ((int) tcp_hdr->th_flags == 18 || (int) tcp_hdr->th_flags == 4))
                     {
-                        gettimeofday(&tv2, NULL);
+                        gettimeofday(&tv2_raw, NULL);
+                        print_time = 2;
                         success = 1;
                         global_success = 1;
                         break;
@@ -540,25 +556,28 @@ int main(int argc, char **argv)
                     strcpy(old_raw_packet_source, new_raw_packet_source);
                 }
 
-                //If correct raw TCP packet is not recieved we print *
-                else
-                {
-                    printf("*   ");
-                    print_time = 0;
-                }
+
                 
             }
 
             //if "*" is not printed we print the latency time 
-            double time_elapsed;
             if (print_time == 1)
             {
-                time_elapsed = (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec);
+                
+                time_elapsed = (double) (tv2_icmp.tv_usec - tv1_icmp.tv_usec) / 1000000 + (double) (tv2_icmp.tv_sec - tv1_icmp.tv_sec);
+                printf ("%.3f ms   ", (time_elapsed * 1000));
+            }
 
-                if (time_elapsed > max_search_time * .8)
-                    printf ("%.3f ms   ", time_elapsed * 1000 - (double) (max_search_time * 1000 * .99)); 
-                else
-                    printf ("%.3f ms   ", time_elapsed * 1000);
+            if (print_time == 2)
+            {
+                time_elapsed = (double) (tv2_raw.tv_usec - tv1_raw.tv_usec) / 1000000 + (double) (tv2_raw.tv_sec - tv1_raw.tv_sec);
+                printf ("%.3f ms   ", (time_elapsed * 1000));
+            }      
+                
+            if (print_time == 0)
+            {
+                printf("*   ");
+                print_time = 0;
             }
 
         }
